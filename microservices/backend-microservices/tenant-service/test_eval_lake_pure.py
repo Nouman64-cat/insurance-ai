@@ -299,7 +299,8 @@ class Migration(unittest.TestCase):
             self.assertIn(sql, listed)
         for sql in (s for _l, s in EVAL_IMMUTABILITY_DDL if s.startswith("CREATE TRIGGER")):
             self.assertNotIn("IF NOT EXISTS", sql)                    # it is dropped first, so running twice is safe
-        labels = [l.split(" ", 1)[0] for l, _ in migrate.MIGRATIONS if l.startswith("v71")]
+        ours = {sql for _label, sql in EVAL_IMMUTABILITY_DDL}
+        labels = [l.split(" ", 1)[0] for l, sql in migrate.MIGRATIONS if sql in ours]          # picked by what the step runs, not by a label prefix another migration can share
         self.assertEqual(len(labels), len(EVAL_IMMUTABILITY_DDL))
         self.assertEqual(len(labels), len(set(labels)), "the lake's migration step names must be unique")
 

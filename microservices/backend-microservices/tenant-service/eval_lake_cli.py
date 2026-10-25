@@ -20,6 +20,8 @@
     docker compose exec tenant-service python eval_lake_cli.py run-ingest /tmp/run-folder     # keep a finished evaluation run (database + MinIO)
     docker compose exec tenant-service python eval_lake_cli.py runs [--dataset SLUG] [--limit N]
     docker compose exec tenant-service python eval_lake_cli.py run <run id> [--report]
+    docker compose exec tenant-service python eval_lake_cli.py run-verify <run id>          # re-check every stored file of a run against its recorded checksum
+    docker compose exec tenant-service python eval_lake_cli.py run-compare <run a> <run b>   # a is the baseline: what got worse, what got better, cost and latency
     docker compose exec tenant-service python eval_lake_cli.py reconcile
     docker compose exec -T tenant-service python eval_lake_cli.py job-submit --as-user admin@example.com --config - < job.json    # queue an evaluation run
     docker compose exec tenant-service python eval_lake_cli.py jobs | job <id> | job-events <id> [--follow] | job-cancel <id>
@@ -309,6 +311,37 @@ async def run(args) -> int:
                 print(f"{b.benchmark_id:34} {b.mode:7} {b.dataset_slug} {b.dataset_version}  x{b.repetitions}  {len(b.models)} model(s)  "
                       f"{'SYNTHETIC ' if b.synthetic else ''}{'complete' if b.complete else 'INCOMPLETE'}")
             return 0
+        if args.command == "run-verify":
+            from shared.evaluation import run_tools
+            try:
+                rep = await run_tools.verify(session, lake, args.run_id)
+            except run_tools.RunToolError as exc:
+                raise LakeValidationError(str(exc))
+            print(f"{'OK  ' if rep['ok'] else 'FAIL'} {rep['run_id']}  {rep['objects_checked']} stored files, {rep['result_rows']} of {rep['executions']} result rows")
+            for p_ in rep["problems"]:
+                print(f"  problem: {p_}")
+            return 0 if rep["ok"] else 1
+        if args.command == "run-compare":
+            from shared.evaluation import run_tools
+            try:
+                c = await run_tools.compare(session, args.run_a, args.run_b)
+            except run_tools.RunToolError as exc:
+                raise LakeValidationError(str(exc))
+            pct_ = lambda x: "-" if x is None else f"{x * 100:.1f}%"  # noqa: E731
+            usd_ = lambda x: "-" if x is None else f"${x:+.4f}"  # noqa: E731
+            print(f"A {c['a_run']['run_id']}  {c['a_run']['model']}  {c['a_run']['dataset']} {c['a_run']['version']}   pass {pct_(c['a']['pass_rate'])}  ({c['a']['passed']}/{c['a']['ran']})")
+            print(f"B {c['b_run']['run_id']}  {c['b_run']['model']}  {c['b_run']['dataset']} {c['b_run']['version']}   pass {pct_(c['b']['pass_rate'])}  ({c['b']['passed']}/{c['b']['ran']})")
+            d = c["delta"]
+            pts = "-" if d["pass_rate"] is None else f"{d['pass_rate'] * 100:+.1f} points"
+            lat = "-" if d["latency_p50_ms"] is None else f"{d['latency_p50_ms']:+.0f} ms"
+            print(f"  pass rate {pts}   cost {usd_(d['cost_usd'])}   latency p50 {lat}")
+            print(f"  {c['cases_compared']} cases compared: {len(c['newly_failing'])} newly failing, {len(c['newly_passing'])} newly passing, {len(c['changed'])} other changes, {c['unchanged']} unchanged")
+            for label, key in (("newly failing", "newly_failing"), ("newly passing", "newly_passing"), ("other change", "changed")):
+                for x in c[key]:
+                    print(f"  {label:14} {x['case']}  {x['a']} -> {x['b']}")
+            for n_ in c["notes"]:
+                print(f"  note: {n_}")
+            return 0
         if args.command == "run-reliability":
             r = (await session.exec(select(EvalRun).where(EvalRun.run_id == args.run_id))).first()
             if r is None:
@@ -499,6 +532,8 @@ def main() -> int:
     sub.add_parser("drift-registry")
     dd = sub.add_parser("drift-deps-load"); dd.add_argument("slug"); dd.add_argument("version"); dd.add_argument("file")
     rr = sub.add_parser("run-reliability"); rr.add_argument("run_id")
+    rv_ = sub.add_parser("run-verify"); rv_.add_argument("run_id")
+    rcm = sub.add_parser("run-compare"); rcm.add_argument("run_a"); rcm.add_argument("run_b")
     c = sub.add_parser("create-dataset"); c.add_argument("slug"); c.add_argument("--name", required=True)
     c.add_argument("--workflow", required=True); c.add_argument("--turn-mode", required=True, choices=["single_turn", "multi_turn"])
     i = sub.add_parser("ingest"); i.add_argument("slug"); i.add_argument("file")

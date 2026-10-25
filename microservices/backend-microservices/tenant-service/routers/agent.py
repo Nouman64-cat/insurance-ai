@@ -9,6 +9,7 @@ from sqlalchemy import text
 from google import genai
 
 from database import get_session
+from services import usage_meter
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/agent", tags=["agent"])
@@ -40,6 +41,7 @@ async def suggest_actions(req: SuggestActionRequest, db: AsyncSession = Depends(
             contents=req.context,
         )
         query_embedding = response.embeddings[0].values
+        usage_meter.record_embedding(usage_meter.SERVICE_AGENT_COPILOT_EMBEDDINGS, "gemini-embedding-001", req.context, req.tenant_id)
         
         # 2. Similarity search using pgvector
         # Convert list of floats to Postgres vector string format

@@ -29,12 +29,12 @@ async def run_with(s, *, slug, model, at, results, version="1.0.0", cost=0.0):
     rid = f"t-st-{uuid.uuid4().hex[:8]}"
     passed = sum(1 for r in results if r[1] == "passed")
     failed = sum(1 for r in results if r[1] == "failed")
-    run = EvalRun(run_id=rid, state="ingesting", kind="suite", model_id=model, provider=model.split("/")[0], synthetic_model=False, dataset_slug=slug, dataset_version=version, executions=len(results), passed=passed, failed=failed,
+    run = EvalRun(run_id=rid, state="ingesting", kind="suite", model_id=model, model_label=model, provider=model.split("/")[0], synthetic_model=False, dataset_slug=slug, dataset_version=version, executions=len(results), passed=passed, failed=failed,
                   started_at=at, finished_at=at, config={"mode": "agent"}, pass_rate=passed / (passed + failed) if passed + failed else None, known_cost_usd=cost)
     s.add(run)
     await s.flush()
-    for case, status, ts in results:
-        s.add(EvalCaseResult(run_row_id=run.id, case_key=case, repetition=1, status=status, operation="chat", usage={"status": "attributed", "calls": 1}, cost_known=True, trace_summary=ts, critical_failed=False))
+    for case, status, ts, *extra in results:
+        s.add(EvalCaseResult(layer_scores=extra[0] if extra else None, run_row_id=run.id, case_key=case, repetition=1, status=status, operation="chat", usage={"status": "attributed", "calls": 1}, cost_known=True, trace_summary=ts, critical_failed=False))
     await s.flush()
     run.state = "complete"
     s.add(run)
@@ -75,9 +75,9 @@ async def main() -> int:
             s.add_all([EvalDriftItem(finding_key=f"t-st-{tag}-1", kind="config_changed", severity="medium", state="open", summary=f"Rule set T-{tag} changed", dataset_slug=None, affected_cases=["T-A", "T-B"], registry_item_key=key, from_version=1, to_version=2),
                        EvalDriftItem(finding_key=f"t-st-{tag}-2", kind="rule_changed", severity="high", state="open", summary=f"T-A's pinned limit no longer holds ({tag})", dataset_slug=slug, affected_cases=["T-A"])])
             before = await run_with(s, slug=slug, model="openai/gpt-4o-mini", at=changed_at - timedelta(hours=6), cost=0.10,
-                                    results=[("T-A", "passed", {"executed_tools": ["record_lead"], "specialist": "underwriting"}), ("T-B", "passed", {"executed_tools": ["list_leads"]}), ("T-C", "failed", {"executed_tools": []})])
+                                    results=[("T-A", "passed", {"executed_tools": ["record_lead"], "specialist": "underwriting"}, {"L3": {"status": "passed", "applicable": True}, "L4": {"status": "passed", "applicable": True}}), ("T-B", "passed", {"executed_tools": ["list_leads"]}), ("T-C", "failed", {"executed_tools": []})])
             after = await run_with(s, slug=slug, model="openai/gpt-4o-mini", at=changed_at + timedelta(hours=8), version="1.0.1", cost=0.30,
-                                   results=[("T-A", "failed", {"executed_tools": ["record_lead"], "specialist": "underwriting"}), ("T-B", "passed", {"executed_tools": ["list_leads"]}), ("T-C", "passed", {"executed_tools": []})])
+                                   results=[("T-A", "failed", {"executed_tools": ["record_lead"], "specialist": "underwriting"}, {"L3": {"status": "failed", "applicable": True}, "L4": {"status": "passed", "applicable": True}}), ("T-B", "passed", {"executed_tools": ["list_leads"]}, {"L3": {"status": "passed", "applicable": True}}), ("T-C", "passed", {"executed_tools": []})])
             s.add(EvalJob(config={"kind": "benchmark_agent", "dataset": slug, "version": "1.0.1", "models": ["openai/gpt-4o-mini", "openai/gpt-4.1"]}, estimate={}, state="running", progress={"executions": 5, "planned": 20, "spent_usd": 0.02}))
             await s.flush()
 
@@ -149,6 +149,24 @@ async def main() -> int:
             await s.flush()
             none = await st.impact(s, f"form:T-{tag}")
             check("an item recorded once has no change and no regression, and the answer says nothing is affected rather than inventing a link", none["changed_at"] is None and none["dependents"] == [] and none["stages"]["change"] is False and none["regression"] == {})
+            # ── Phase 8: analytics and the executions filters, on the test's own dataset (every figure exact) ──
+            an = await st.analytics(s, dataset=slug, days=30)
+            check("analytics: six executions in the window, four passed and one failed with a verdict each, the other-than-verdict counts included", an["outcomes"]["total"] == 6 and an["outcomes"]["by_status"]["passed"] == 4 and an["outcomes"]["by_status"]["failed"] == 2, an["outcomes"])
+            check("analytics: the layer table counts L3 as 2 passed and 1 failed for the model, and L4 as 2 passed", an["layers"]["by_model"]["openai/gpt-4o-mini"]["L3"]["passed"] == 2 and an["layers"]["by_model"]["openai/gpt-4o-mini"]["L3"]["failed"] == 1
+                  and an["layers"]["by_model"]["openai/gpt-4o-mini"]["L4"]["passed"] == 2, an["layers"]["by_model"])
+            check("analytics: coverage is the cases run against the case count of the newest published version", an["coverage"][slug]["cases_run"] == 3 and an["coverage"][slug]["cases_total"] == 3, an["coverage"])
+            check("analytics: routing counts the specialist and the tool, and the failed trajectory check lowers the specialist's accuracy", an["routing"]["specialists"]["underwriting"]["executions"] == 2 and an["routing"]["specialists"]["underwriting"]["l3_failed"] == 1
+                  and an["routing"]["tools"]["record_lead"]["executions"] == 2, an["routing"])
+            check("analytics: a model that is not in the dataset's runs shows nothing, and an empty window shows zero executions rather than an error", (await st.analytics(s, dataset=slug, model="openai/none", days=30))["outcomes"]["total"] == 0 and (await st.analytics(s, dataset=slug, days=1))["outcomes"]["total"] == 0)
+            check("analytics: the dataset and model choices list what exists", slug in an["datasets"] and "openai/gpt-4o-mini" in an["models"])
+            fl = await st.results(s, dataset=slug, failed_layer="L3")
+            check("results: failed_layer keeps exactly the execution that failed that layer", fl["total"] == 1 and fl["results"][0]["case"] == "T-A" and fl["results"][0]["run_id"] == after, fl["total"])
+            sp = await st.results(s, dataset=slug, specialist="underwriting")
+            tl = await st.results(s, dataset=slug, tool="list_leads")
+            check("results: specialist and tool filters keep only the executions routed to it or calling it", sp["total"] == 2 and tl["total"] == 2 and all(r["specialist"] == "underwriting" for r in sp["results"]), [sp["total"], tl["total"]])
+            check("results: a window shorter than the runs' age keeps none of them", (await st.results(s, dataset=slug, days=1))["total"] == 0 and (await st.results(s, dataset=slug, days=30))["total"] == 6)
+            lake = next((n for n in g["nodes"] if n["kind"] == "lake"), None)
+            check("the map has the data lake, in the Golden data column, with its objects counted and an edge to each dataset", lake is not None and lake["layer"] == 1 and any(e["from"] == "lake" and e["to"] == f"dataset:{slug}" and e["kind"] == "stores" for e in g["edges"]), lake)
         finally:
             await s.rollback()
     print("FAILED" if FAILS else "all passed")

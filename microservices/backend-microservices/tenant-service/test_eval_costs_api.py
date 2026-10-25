@@ -51,7 +51,7 @@ async def main() -> int:
     body = {"provider": "openai", "period_start": f"{year}-05-01", "period_end": f"{year}-05-31", "billed_usd": 12.0, "reference": "INV-API", "source": "api test: typed from the usage page",
             "billed_input_tokens": 3000, "billed_output_tokens": 300}
     async with httpx.AsyncClient(base_url=BASE, timeout=60) as c:
-        for path in ("/eval/costs/statements", "/eval/costs/lines", "/eval/costs/certainty", "/eval/costs/attribution", "/eval/costs/rates", "/eval/costs/overview"):
+        for path in ("/eval/costs/statements", "/eval/costs/lines", "/eval/costs/certainty", "/eval/costs/attribution", "/eval/costs/rates", "/eval/costs/overview", "/eval/costs/compute-rates"):
             check(f"anonymous callers are refused ({path})", (await c.get(path)).status_code == 401)
             check(f"an ordinary user is refused ({path})", (await c.get(path, headers=O)).status_code == 403)
         check("an ordinary user cannot enter a statement", (await c.post("/eval/costs/statements", headers=O, json=body)).status_code == 403)
@@ -119,6 +119,29 @@ async def main() -> int:
         check("the overview in a second currency says which rate it used", (await c.get("/eval/costs/overview", headers=A, params={"currency": "XTS"})).json()["rate"]["currency"] == "XTS")
         one = (await c.get("/eval/costs/benchmarks", headers=A, params={"benchmark_id": "no-such-benchmark"})).json()
         check("benchmark spending can be asked for one benchmark", one["count"] == 0 and one["benchmarks"] == [])
+        export = f"date,model,input_tokens,output_tokens,cost\n{year}-06-01,gpt-4.1-2025-04-14,1000,100,2.00\n{year}-06-02,gpt-4o-mini,10,1,0.40\n"
+        check("an ordinary user cannot read an export", (await c.post("/eval/costs/statements/preview", headers=O, json={"provider": "openai", "content": export})).status_code == 403)
+        check("an unreadable export is refused with the reason", (lambda r: r.status_code == 422 and "date column" in r.text)(await c.post("/eval/costs/statements/preview", headers=A, json={"provider": "openai", "content": "a,b\n1,2\n"})))
+        pv = (await c.post("/eval/costs/statements/preview", headers=A, json={"provider": "openai", "filename": "june.csv", "content": export})).json()
+        check("an export is read: period, billed total, tokens, and the day-by-day gap against what was recorded (nothing, in June)", pv["period_start"] == f"{year}-06-01" and abs(pv["billed_usd"] - 2.4) < 1e-9 and pv["gap"]["days_billed_not_recorded"] == [f"{year}-06-01", f"{year}-06-02"] and pv["recorded_usd"] == 0.0, str(pv)[:300])
+        check("previewing saves nothing", all(x["period_start"] != f"{year}-06-01" for x in (await c.get("/eval/costs/statements", headers=A)).json()["statements"]))
+        saved = await c.post("/eval/costs/statements", headers=A, json={"provider": "openai", "period_start": f"{year}-06-01", "period_end": f"{year}-06-02", "billed_usd": pv["billed_usd"], "source": "api test: uploaded june.csv",
+                                                                        "usage_detail": {"by_day": pv["by_day"], "by_model": pv["by_model"], "filename": "june.csv"}})
+        check("the bill is saved with its export", saved.status_code == 201 and saved.json()["statement"]["has_usage_detail"] is True, saved.text[:200])
+        det = (await c.get(f"/eval/costs/statements/{saved.json()['statement']['id']}", headers=A)).json()
+        check("the saved bill shows where the difference is: both days billed with nothing recorded, and the models", det["live"]["status"] == "under_recorded" and det["live"]["gap"]["days_billed_not_recorded"] == [f"{year}-06-01", f"{year}-06-02"] and {m["key"] for m in det["live"]["gap"]["models"]} == {"gpt-4.1", "gpt-4o-mini"}, str(det["live"].get("gap"))[:300])
+        check("a usage detail that is not what an export produces is refused", (await c.post("/eval/costs/statements", headers=A, json={"provider": "gemini", "period_start": f"{year}-07-01", "period_end": f"{year}-07-02", "billed_usd": 1, "source": "x", "usage_detail": {"by_day": "nope"}})).status_code == 422)
+        name = f"API-GPU-{uuid.uuid4().hex[:6]}"
+        cbody = {"name": name, "resource": "gpu", "usd_per_hour": 1.8, "effective_from": f"{year}-05-01", "source": "api test: price list"}
+        check("an ordinary user cannot record a machine rate", (await c.post("/eval/costs/compute-rates", headers=O, json=cbody)).status_code == 403)
+        for what, bad in (("no name", {**cbody, "name": ""}), ("a resource that is not gpu or cpu", {**cbody, "resource": "tpu"}), ("a negative price", {**cbody, "usd_per_hour": -1}), ("no source", {**cbody, "source": ""}), ("a future day", {**cbody, "effective_from": "2999-01-01"})):
+            check(f"a machine rate is refused for {what}", (await c.post("/eval/costs/compute-rates", headers=A, json=bad)).status_code == 422)
+        r = await c.post("/eval/costs/compute-rates", headers=A, json=cbody)
+        check("a machine's hourly rate is recorded with where it came from", r.status_code == 201 and r.json()["rate"]["usd_per_hour"] == 1.8 and r.json()["rate"]["source"] == "api test: price list" and r.json()["warning"] is None, r.text[:200])
+        r2 = await c.post("/eval/costs/compute-rates", headers=A, json={**cbody, "usd_per_hour": 4.0, "effective_from": f"{year}-05-20"})
+        check("a price that jumps by more than half is recorded with a warning", r2.status_code == 201 and r2.json()["warning"] and "+122%" in r2.json()["warning"], r2.text[:200])
+        mach = next(m for m in (await c.get("/eval/costs/compute-rates", headers=A)).json()["machines"] if m["name"] == name)
+        check("the list shows the machine with its rate in force and its history", mach["current"]["usd_per_hour"] == 4.0 and [h["usd_per_hour"] for h in mach["history"]] == [4.0, 1.8])
         a = (await c.get("/eval/costs/attribution", headers=A)).json()
         check("the attribution check answers for every run", "runs" in a and "with_problems" in a and a["checked"] == len(a["runs"]))
     print("FAILED" if FAILS else "all passed")

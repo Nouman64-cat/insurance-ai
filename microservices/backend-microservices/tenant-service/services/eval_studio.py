@@ -3,7 +3,7 @@ records (datasets, the change registry and its declared case dependencies, revie
 
 The map's nodes carry a health state computed from real numbers, with the reason in words:
   ok | warn | bad | unknown     (unknown means there is not enough evidence to say, never "fine")
-Agents, specialists and tools exist only as far as runs OBSERVED them (the trace summary of each execution): the platform keeps no catalogue of them.
+Agents, specialists, skills and tools exist only as far as runs OBSERVED them (the trace summary of each execution): the platform keeps no catalogue of them.
 Pass rates in health judgments use real-model runs only; scripted models prove the machinery, not the quality.
 """
 from datetime import date, datetime, time, timedelta
@@ -14,10 +14,11 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from services import eval_budget, eval_reconcile
+from shared.evaluation import analytics as an
 from shared.evaluation import change_registry as cr
 from shared.evaluation.policy import UNCONFIRMED
 from shared.models.evaluation import (EvalBenchmark, EvalCaseDependency, EvalCaseResult, EvalCostLine, EvalDataset, EvalDatasetVersion, EvalDriftItem, EvalDriftScan, EvalJob, EvalMetricScore, EvalModel,
-                                      EvalRegistryItem, EvalRegistryVersion, EvalRun, EvalVersionCase)
+                                      EvalRegistryItem, EvalRegistryVersion, EvalRun, EvalStorageObject, EvalVersionCase)
 
 RAN = ("passed", "failed")
 ACTIVE_JOBS = ("queued", "running", "cancel_requested")
@@ -49,11 +50,12 @@ async def _real_results(session: AsyncSession) -> List[Tuple[EvalCaseResult, Eva
 # ── what the agent was observed doing ─────────────────────────────────────────────────────────────────────────────────
 
 async def observed(session: AsyncSession) -> Dict[str, Any]:
-    """The agent, its specialists and its tools as the traces of past executions show them. There is no catalogue: a tool never used by any run does not appear."""
+    """The agent, its specialists, skills and tools as the traces of past executions show them. There is no catalogue: a tool never used by any run does not appear."""
     rows = (await session.exec(select(EvalCaseResult.status, EvalCaseResult.trace_summary, EvalRun.synthetic_model, EvalRun.model_id, EvalRun.run_id)
                                .join(EvalRun, EvalRun.id == EvalCaseResult.run_row_id).where(EvalCaseResult.trace_summary != {}))).all()          # noqa: E711
     tools: Dict[str, Dict[str, Any]] = {}
     specs: Dict[str, Dict[str, Any]] = {}
+    skills: Dict[str, Dict[str, Any]] = {}
     agent = {"executions": 0, "ran": 0, "passed": 0, "failed": 0, "blocked": 0, "infrastructure_errors": 0, "scripted_executions": 0}
 
     def bucket(d: Dict[str, Dict[str, Any]], name: str) -> Dict[str, Any]:
@@ -62,6 +64,7 @@ async def observed(session: AsyncSession) -> Dict[str, Any]:
         ts = ts or {}
         names = ts.get("executed_tools") if isinstance(ts.get("executed_tools"), list) else []
         spec = ts.get("specialist")
+        used_skills = [x for x in ts.get("skills") if isinstance(x, str)] if isinstance(ts.get("skills"), list) else []
         agent["executions"] += 1
         if synthetic:
             agent["scripted_executions"] += 1
@@ -71,7 +74,7 @@ async def observed(session: AsyncSession) -> Dict[str, Any]:
             agent["failed"] += 1 if status == "failed" else 0
             agent["blocked"] += 1 if status == "blocked" else 0
             agent["infrastructure_errors"] += 1 if status == "infrastructure_error" else 0
-        for kind, name, d in [("tool", t, tools) for t in set(names)] + ([("specialist", spec, specs)] if spec else []):
+        for kind, name, d in [("tool", t, tools) for t in set(names)] + [("skill", k, skills) for k in set(used_skills)] + ([("specialist", spec, specs)] if spec else []):
             b = bucket(d, name)
             b["executions"] += 1
             if synthetic:
@@ -80,9 +83,9 @@ async def observed(session: AsyncSession) -> Dict[str, Any]:
                 b["ran"] += 1 if status in RAN else 0
                 b["passed"] += 1 if status == "passed" else 0
                 b["failed"] += 1 if status == "failed" else 0
-            if kind == "tool" and spec:
+            if kind in ("tool", "skill") and spec:
                 b["specialists"].add(spec)
-            if kind == "specialist":
+            if kind in ("specialist", "skill"):
                 b["tools"].update(names)
             if model and not synthetic:
                 b["models"].add(model)
@@ -91,7 +94,7 @@ async def observed(session: AsyncSession) -> Dict[str, Any]:
         return {**{k: v for k, v in b.items() if k not in ("tools", "specialists", "models")}, "pass_rate": (b["passed"] / b["ran"]) if b["ran"] else None,
                 "tools": sorted(b["tools"]), "specialists": sorted(b["specialists"]), "models": sorted(b["models"])}
     return {"agent": {**agent, "pass_rate": (agent["passed"] / agent["ran"]) if agent["ran"] else None}, "specialists": sorted((fin(b) for b in specs.values()), key=lambda x: -x["executions"]),
-            "tools": sorted((fin(b) for b in tools.values()), key=lambda x: -x["executions"]),
+            "tools": sorted((fin(b) for b in tools.values()), key=lambda x: -x["executions"]), "skills": sorted((fin(b) for b in skills.values()), key=lambda x: -x["executions"]),
             "note": "Observed from the traces of past executions. The platform keeps no catalogue of agents or tools, so one that no run has used does not appear here."}
 
 
@@ -167,6 +170,19 @@ async def graph(session: AsyncSession, *, today: Optional[date] = None) -> Dict[
         if f"rules:{t}" in {n["id"] for n in nodes} and f"dataset:{slug}" in {n["id"] for n in nodes}:
             edges.append({"from": f"rules:{t}", "to": f"dataset:{slug}", "kind": "depends", "weight": len(cases), "label": f"{len(cases)} case(s) depend on it"})
 
+    # the data lake (MinIO): the objects that hold every dataset layer, every published version and every run's artifacts, and whether they still verify
+    objs = dict((await session.exec(select(EvalStorageObject.layer, func.count()).group_by(EvalStorageObject.layer))).all())
+    obj_states = dict((await session.exec(select(EvalStorageObject.state, func.count()).group_by(EvalStorageObject.state))).all())
+    bad_objs = int(obj_states.get("corrupt", 0)) + int(obj_states.get("missing", 0))
+    n_versions = (await session.exec(select(func.count()).select_from(EvalDatasetVersion).where(EvalDatasetVersion.state == "published"))).one()
+    nodes.append(_node("lake", "lake", "Data lake (MinIO)", 1, len([n for n in nodes if n["layer"] == 1]),
+                       _health("unknown", "nothing is stored yet") if not sum(objs.values()) else _health("bad", f"{bad_objs} stored object(s) are corrupt or missing") if bad_objs
+                       else _health("ok", f"{sum(objs.values())} objects stored, none corrupt or missing"),
+                       {"objects_by_layer": {k: int(v) for k, v in objs.items()}, "objects_by_state": {k: int(v) for k, v in obj_states.items()}, "published_versions": int(n_versions), "corrupt_or_missing": bad_objs},
+                       badge=f"{n_versions} versions"))
+    for d in datasets:
+        edges.append({"from": "lake", "to": f"dataset:{d.slug}", "kind": "stores", "weight": int(objs.get("gold", 0)), "label": "holds its versions"})
+
     # harness: jobs and runs
     since = datetime.utcnow() - timedelta(days=7)
     jobs = [j for j in (await session.exec(select(EvalJob).where(EvalJob.created_at >= since).order_by(EvalJob.created_at.desc()))).all() if (j.config or {}).get("kind") != "drift_scan"]
@@ -218,6 +234,13 @@ async def graph(session: AsyncSession, *, today: Optional[date] = None) -> Dict[
                                    else f"{worst_spec['name']} passed {worst_spec['pass_rate'] * 100:.0f}% of {worst_spec['ran']}") if any(s["ran"] >= 3 for s in obs["specialists"]) else _health("unknown", "too few real executions"),
                            {"items": [s["name"] for s in obs["specialists"]], "observed_only": True}))
         edges.append({"from": "agent", "to": "specialists", "kind": "routes", "weight": sum(s["executions"] for s in obs["specialists"]), "label": "routed to"})
+    if obs["skills"]:
+        weak_sk = [k for k in obs["skills"] if k["ran"] >= 5 and (k["pass_rate"] or 0) < 0.7]
+        nodes.append(_node("skills", "skills", f"Skills ({len(obs['skills'])})", 3, 1,
+                           _health("warn", f"{len(weak_sk)} skill(s) loaded by real executions that mostly failed: {', '.join(k['name'] for k in weak_sk[:3])}") if weak_sk
+                           else _health("ok", "no skill with 5 or more real executions is failing") if any(k["ran"] >= 5 for k in obs["skills"]) else _health("unknown", "too few real executions"),
+                           {"items": [k["name"] for k in obs["skills"]], "observed_only": True}))
+        edges.append({"from": "agent", "to": "skills", "kind": "loads", "weight": sum(k["executions"] for k in obs["skills"]), "label": "skills loaded"})
     if obs["tools"]:
         weak = [t for t in obs["tools"] if t["ran"] >= 5 and (t["pass_rate"] or 0) < 0.7]
         nodes.append(_node("tools", "tools", f"Tools ({len(obs['tools'])})", 3, 2, _health("warn", f"{len(weak)} tool(s) used by real executions that mostly failed: {', '.join(t['name'] for t in weak[:3])}") if weak
@@ -424,18 +447,29 @@ async def impact(session: AsyncSession, item_key: str) -> Optional[Dict[str, Any
 # ── executions across runs ────────────────────────────────────────────────────────────────────────────────────────────
 
 async def results(session: AsyncSession, *, status: Optional[str] = None, model: Optional[str] = None, dataset: Optional[str] = None, case: Optional[str] = None, run_id: Optional[str] = None,
-                  include_synthetic: bool = False, limit: int = 50, offset: int = 0) -> Dict[str, Any]:
-    """Executions of every completed run, newest first, filtered; with how many there are of each status (under the other filters) and which models and datasets to filter by."""
+                  include_synthetic: bool = False, failed_layer: Optional[str] = None, specialist: Optional[str] = None, tool: Optional[str] = None, days: Optional[int] = None,
+                  limit: int = 50, offset: int = 0) -> Dict[str, Any]:
+    """Executions of every completed run, newest first, filtered; with how many there are of each status (under the other filters) and which models and datasets to filter by.
+    `failed_layer` (L1 to L6) keeps the executions that failed that evaluation layer, `specialist` and `tool` those that routed to it or called it, `days` those from the last N days."""
     base = select(EvalCaseResult, EvalRun).join(EvalRun, EvalRun.id == EvalCaseResult.run_row_id).where(EvalRun.state == "complete")
     if not include_synthetic:
         base = base.where(EvalRun.synthetic_model == False)                       # noqa: E712
-    for column, value in ((EvalRun.model_label, model), (EvalRun.dataset_slug, dataset)):
-        if value:
-            base = base.where(column == value)
+    if model:
+        base = base.where(EvalRun.model_label == None) if model == "no model" else base.where(EvalRun.model_label == model)          # noqa: E711  ("no model": the checks that call no model)
+    if dataset:
+        base = base.where(EvalRun.dataset_slug == dataset)
     if case:
         base = base.where(EvalCaseResult.case_key.ilike(f"%{case}%"))
     if run_id:
         base = base.where(EvalRun.run_id == run_id)
+    if failed_layer:
+        base = base.where(EvalCaseResult.layer_scores[failed_layer]["status"].astext == "failed")
+    if specialist:
+        base = base.where(EvalCaseResult.trace_summary["specialist"].astext == specialist)
+    if tool:
+        base = base.where(EvalCaseResult.trace_summary["executed_tools"].contains([tool]))
+    if days:
+        base = base.where(EvalRun.started_at >= datetime.utcnow() - timedelta(days=days))
     facets: Dict[str, int] = {}
     sub = base.subquery()
     for st, n in (await session.exec(select(sub.c.status, func.count()).group_by(sub.c.status))).all():
@@ -450,3 +484,33 @@ async def results(session: AsyncSession, *, status: Optional[str] = None, model:
                          "repetition": r.repetition, "status": r.status, "reason": r.reason, "critical_failed": r.critical_failed, "latency_ms": r.latency_ms, "input_tokens": r.input_tokens, "output_tokens": r.output_tokens,
                          "cost_usd": r.cost_usd, "cost_known": r.cost_known, "judge_cost_usd": r.judge_cost_usd, "has_trace": bool(r.trace_key), "at": run.started_at,
                          "specialist": (r.trace_summary or {}).get("specialist"), "tools": (r.trace_summary or {}).get("executed_tools") if isinstance((r.trace_summary or {}).get("executed_tools"), list) else []} for r, run in rows]}
+
+
+async def analytics(session: AsyncSession, *, dataset: Optional[str] = None, model: Optional[str] = None, days: int = 90, include_synthetic: bool = False, now: Optional[datetime] = None) -> Dict[str, Any]:
+    """What the executions in a window say: outcomes and coverage, the six evaluation layers per model, routing and tool accuracy, latency (average, P50, P95), repeat reliability, and the
+    new review items per week. Real-model runs only unless scripted ones are asked for; every figure comes from the stored executions and carries the count it rests on."""
+    now = now or datetime.utcnow()
+    stmt = select(EvalCaseResult, EvalRun).join(EvalRun, EvalRun.id == EvalCaseResult.run_row_id).where(EvalRun.state == "complete", EvalRun.started_at >= now - timedelta(days=days))
+    if not include_synthetic:
+        stmt = stmt.where(EvalRun.synthetic_model == False)                                          # noqa: E712
+    if dataset:
+        stmt = stmt.where(EvalRun.dataset_slug == dataset)
+    if model:
+        stmt = stmt.where(EvalRun.model_label == None) if model == "no model" else stmt.where(EvalRun.model_label == model)          # noqa: E711
+    rows = []
+    for r, run in (await session.exec(stmt.order_by(EvalRun.started_at.desc()).limit(20000))).all():
+        ts = r.trace_summary or {}
+        rows.append({"model": run.model_label, "dataset": run.dataset_slug, "case_id": r.case_key, "repetition": r.repetition, "status": r.status, "critical_failed": r.critical_failed, "latency_ms": r.latency_ms,
+                     "layer_scores": r.layer_scores or {}, "specialist": ts.get("specialist"), "tools": ts.get("executed_tools") if isinstance(ts.get("executed_tools"), list) else [], "at": run.started_at})
+    latest: Dict[str, int] = {}
+    for slug, case_count, version in (await session.exec(select(EvalDataset.slug, EvalDatasetVersion.case_count, EvalDatasetVersion.version).join(EvalDatasetVersion, EvalDatasetVersion.dataset_id == EvalDataset.id)
+                                                         .where(EvalDatasetVersion.state == "published").order_by(EvalDatasetVersion.published_at.desc()))).all():
+        latest.setdefault(slug, case_count)                                                           # the newest published version of each dataset
+    if dataset:
+        latest = {k: v for k, v in latest.items() if k == dataset}
+    drift = [{"opened_at": o, "kind": k, "state": st} for o, k, st in (await session.exec(select(EvalDriftItem.opened_at, EvalDriftItem.kind, EvalDriftItem.state).where(EvalDriftItem.opened_at >= now - timedelta(weeks=12)))).all()]
+    out = an.summarise(rows, version_cases=latest, drift_items=drift, now=now)
+    models = sorted({m for m in (await session.exec(select(EvalRun.model_label).where(EvalRun.state == "complete", EvalRun.model_label != None).distinct())).all() if m})        # noqa: E711
+    datasets = sorted({d for d in (await session.exec(select(EvalRun.dataset_slug).where(EvalRun.state == "complete", EvalRun.dataset_slug != None).distinct())).all() if d})   # noqa: E711
+    return {**out, "window_days": days, "include_synthetic": include_synthetic, "dataset": dataset, "model": model, "models": models, "datasets": datasets,
+            "note": "Real-model runs only unless scripted ones are included. A layer that did not apply to an execution is not counted for it."}

@@ -9,6 +9,7 @@ import {
 import { GroupedBars, IntervalPlot, Legend, Trend, useHidden, type Series } from "./charts";
 import BenchmarkCost from "./CostCard";
 import TraceDrawer from "./TraceDrawer";
+import CaseHeatmap from "@/components/studio/CaseHeatmap";
 
 const btnGhost = "px-3 py-1.5 text-xs font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg hover:border-slate-300 disabled:opacity-40 transition-all";
 const chip = (on: boolean) => `px-2 py-1 rounded-md text-[11px] border ${on ? "bg-blue-50 border-blue-300 text-blue-700" : "bg-white border-slate-200 text-slate-600"}`;
@@ -186,6 +187,8 @@ export default function Results({ initialId, onOpened }: { initialId: string | n
               series={series.filter((s) => breakdown.models.includes(s.key))} groups={breakdown.stages.map((s) => ({ key: s.stage, label: s.stage }))}
               value={(g, s) => breakdown.stages.find((x) => x.stage === g)?.models[s]?.pass_rate} format={(v) => pct(v)} />
           )}
+
+          {breakdown && <CaseHeatmap breakdown={breakdown} hidden={hidden} onOpen={setTrace} />}
 
           {breakdown && (
             <section className="rounded-xl border border-slate-200 bg-white p-4">

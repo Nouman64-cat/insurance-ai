@@ -102,6 +102,26 @@ async def main() -> int:
             none = await svc.certainty(s, *svc.period_of(date(2001, 7, 1), date(2001, 7, 31)))
             check("a window with nothing recorded is all zeros", none["totals"]["total_usd"] == 0.0 and none["confirmed_by"] == [])
             check("only statements that match right now confirm anything", all(p["statement_id"] != str(st1) for p in await svc.matched_periods(s)))
+
+            # ── a provider usage export: read, compared day by day, kept with the bill ──────────────────────────────────────────────
+            run2 = f"t-imp-{uuid.uuid4().hex[:6]}"
+            s.add_all([line(run2, "openai", 1.57, at=datetime(2002, 3, 4, 12), model="gpt-4.1-2025-04-14"), line(run2, "openai", 0.30, at=datetime(2002, 3, 5, 12), model="gpt-4o-mini-2024-07-18")])
+            await s.flush()
+            export = ("date,model,input_tokens,output_tokens,cost\n2002-03-04,gpt-4.1-2025-04-14,500000,50000,1.57\n2002-03-05,gpt-4o-mini-2024-07-18,1000000,100000,0.30\n"
+                      "2002-03-06,gpt-4.1-2025-04-14,400000,40000,1.24\n2002-03-06,gpt-5,10,1,0.50\n")
+            pv = await svc.preview_import(s, "openai", "usage-march.csv", export)
+            check("an export is read without saving anything: period, billed total, and what was recorded for the same days", pv["period_start"] == "2002-03-04" and pv["period_end"] == "2002-03-06" and abs(pv["billed_usd"] - 3.61) < 1e-9 and abs(pv["recorded_usd"] - 1.87) < 1e-9, pv)
+            gap = pv["gap"]
+            check("the day nothing was recorded for is named, with what was billed", gap["days_billed_not_recorded"] == ["2002-03-06"] and gap["largest_days"][0]["key"] == "2002-03-06" and abs(gap["largest_days"][0]["difference_usd"] - 1.74) < 1e-9, gap["days"])
+            check("a model that was billed but never recorded is named", any(m["key"] == "gpt-5" and m["verdict"] == "billed_not_recorded" for m in gap["models"]) and any("gpt-5" in e for e in gap["explanation"]), gap["explanation"])
+            check("a file that cannot be read is refused with the reason", await refused(svc.preview_import(s, "openai", "x.csv", "a,b\n1,2\n"), 422) and await refused(svc.preview_import(s, "acme", "x.csv", export), 422))
+            saved = await svc.create_statement(s, actor_id=uid, provider="openai", period_start=date(2002, 3, 4), period_end=date(2002, 3, 6), billed_usd=pv["billed_usd"], reference=None, source="uploaded usage-march.csv",
+                                               usage_detail={"by_day": pv["by_day"], "by_model": pv["by_model"], "filename": "usage-march.csv"})
+            check("the bill is judged as always, and now says where the difference is", saved["reconciliation"]["status"] in ("under_recorded", "incomplete") and any("2002-03-06" in str(x) for x in (await svc.compare(s, await s.get(EvalProviderStatement, uuid.UUID(saved["statement"]["id"]))))["gap"]["days_billed_not_recorded"]))
+            live = await svc.compare(s, await s.get(EvalProviderStatement, uuid.UUID(saved["statement"]["id"])))
+            check("the day-by-day gap is recomputed live from the saved export, so a later run changes it", live["gap"]["largest_days"][0]["key"] == "2002-03-06")
+            noexp = await svc.create_statement(s, actor_id=uid, provider="openai", period_start=date(2002, 4, 1), period_end=date(2002, 4, 2), billed_usd=1.0, reference=None, source="typed")
+            check("a bill entered by hand has no day-by-day detail, and says so (not an empty table)", "gap" not in await svc.compare(s, await s.get(EvalProviderStatement, uuid.UUID(noexp["statement"]["id"]))) and noexp["statement"]["has_usage_detail"] is False)
         finally:
             await s.rollback()
     print("FAILED" if FAILS else "all passed")

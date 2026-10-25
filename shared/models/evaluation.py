@@ -738,6 +738,7 @@ class EvalProviderStatement(SQLModel, table=True):
     billed_input_tokens: Optional[int] = Field(default=None, sa_column=Column(BigInteger, nullable=True))        # the token totals the provider's page shows, when it shows them
     billed_output_tokens: Optional[int] = Field(default=None, sa_column=Column(BigInteger, nullable=True))
     billed_cached_tokens: Optional[int] = Field(default=None, sa_column=Column(BigInteger, nullable=True))
+    usage_detail: Optional[dict] = Field(default=None, sa_column=Column(JSONB, nullable=True))                    # the per-day and per-model totals of an imported usage export, so the gap can be traced to days and models
     tolerance_pct: float = Field(default=5.0, sa_column=Column(Float, nullable=False, server_default=text("5")))      # how far the recorded figure may be from the bill and still match
     tolerance_usd: float = Field(default=0.05, sa_column=Column(Float, nullable=False, server_default=text("0.05")))
     supersedes_id: Optional[UUID] = Field(default=None, foreign_key="eval_provider_statements.id")
@@ -767,4 +768,26 @@ class EvalReconciliation(SQLModel, table=True):
     note: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))                             # what the person says explains a difference
     detail: dict = Field(default_factory=dict, sa_column=Column(JSONB, nullable=False, server_default=text("'{}'::jsonb")))   # tokens, components, the explanation
     performed_by: UUID = Field(foreign_key="users.id")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class EvalComputeRate(SQLModel, table=True):
+    """What a named machine costs per hour for a resource (GPU or CPU), from a given day, with where the price came from. A self-hosted model is costed as machine time x this rate
+    (shared/evaluation/self_hosted.py). Append-only: a change of price is a newer row."""
+
+    __tablename__ = "eval_compute_rates"
+    __table_args__ = (
+        CheckConstraint("resource IN ('gpu','cpu')", name="ck_eval_compute_resource"),
+        CheckConstraint("usd_per_hour >= 0", name="ck_eval_compute_rate"),
+        CheckConstraint("length(btrim(name)) > 0 AND length(btrim(source)) > 0", name="ck_eval_compute_named_and_sourced"),
+        Index("ix_eval_compute_rates_lookup", "name", "resource", "effective_from"),
+    )
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    name: str = Field(max_length=120)
+    resource: str = Field(max_length=3)
+    usd_per_hour: float
+    effective_from: datetime
+    source: str = Field(sa_column=Column(Text, nullable=False))
+    recorded_by: UUID = Field(foreign_key="users.id")
     created_at: datetime = Field(default_factory=datetime.utcnow)

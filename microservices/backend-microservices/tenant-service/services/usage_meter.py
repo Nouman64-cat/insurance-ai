@@ -14,6 +14,8 @@ log = logging.getLogger("tenant-service.usage")
 
 SERVICE_DOCUMENT_READER = "Document Reader"  # OCR area: medical reports and document classification
 SERVICE_RULE_ASSIST = "Rule Assist"  # base model area
+SERVICE_AGENT_COPILOT_EMBEDDINGS = "Agent Copilot (embeddings)"  # the assistant embedding a question to search its knowledge base
+SERVICE_KNOWLEDGE_BASE_EMBEDDINGS = "Knowledge Base (embeddings)"  # a form template embedded when it is published
 
 _pending: set[asyncio.Task] = set()
 
@@ -72,3 +74,34 @@ def record(service_name: str, provider: str, requested_model: str, body: Any,
         task.add_done_callback(_pending.discard)
     except Exception as exc:  # noqa: BLE001
         log.warning("Token usage not recorded: %s", exc)
+
+
+def _count_embedding_tokens(model: str, contents: Any) -> Optional[int]:
+    """How many tokens an embedding request was billed for. The embedding response carries no usage on the Gemini API, so the count comes from the provider's own
+    (free) token counter for the same model and text. None when it cannot be counted: the call is then simply not recorded, never recorded as zero."""
+    import os
+    from google import genai
+    name = model if model.startswith("models/") else f"models/{model}"
+    client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))            # kept in a name: a client used inline is closed before its request is sent
+    n = client.models.count_tokens(model=name, contents=contents).total_tokens
+    return int(n) if n else None
+
+
+def record_embedding(service_name: str, model: str, contents: Any, tenant_id: Optional[UUID | str] = None, *, counter: Any = None) -> None:
+    """Schedule a usage row for one embedding call (an embedding is an input-only call: its tokens are input tokens). Never awaits, never raises, and never blocks the
+    caller: the tokens are counted in a worker thread. A call whose tokens cannot be counted is not recorded."""
+    async def _run() -> None:
+        try:
+            tokens = await asyncio.to_thread(counter or _count_embedding_tokens, model, contents)
+            if not tokens:
+                return
+            await _write({"service_name": service_name, "model_name": model.replace("models/", "")[:100], "tenant_id": UUID(str(tenant_id)) if tenant_id else None,
+                          "input_tokens": tokens, "output_tokens": 0, "cached_tokens": 0, "total_tokens": tokens})
+        except Exception as exc:  # noqa: BLE001
+            log.warning("Embedding usage not recorded: %s", exc)
+    try:
+        task = asyncio.get_running_loop().create_task(_run())
+        _pending.add(task)
+        task.add_done_callback(_pending.discard)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Embedding usage not recorded: %s", exc)

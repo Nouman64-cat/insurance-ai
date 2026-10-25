@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { tx } from "@/lib/i18n/tx";
+import TraceTimeline from "@/components/studio/TraceTimeline";
 import { getResult, ms, tokens, usd, type ResultDetail } from "@/lib/evalBenchmarks";
 
 interface TraceMessage { id?: string; type: string; content?: string; tool_calls?: { name: string; args?: unknown }[]; name?: string; result?: unknown }
@@ -105,6 +106,8 @@ export default function TraceDrawer({ resultId, onClose }: { resultId: string; o
                   </ul>
                 </section>
               )}
+
+              <TraceTimeline r={r} />
 
               {trace && (
                 <section>

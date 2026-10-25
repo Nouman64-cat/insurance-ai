@@ -29,7 +29,7 @@ from shared.evaluation.config import LakeSettings  # noqa: E402
 from shared.evaluation.lake import DataLake  # noqa: E402
 from shared.evaluation.object_store import InMemoryObjectStore  # noqa: E402
 from shared.evaluation.runs import RunFolderError, ingest_run, seal_folder  # noqa: E402
-from shared.evaluation import cost_lines, cost_store  # noqa: E402
+from shared.evaluation import cost_lines, cost_store, run_tools  # noqa: E402
 from shared.models.evaluation import EvalAssertionResult, EvalCaseResult, EvalCostLine, EvalCostRecord, EvalPricingVersion, EvalRun  # noqa: E402
 
 ROOT = Path("/work")
@@ -246,9 +246,64 @@ async def t_cost_lines_split_the_spending_exactly_and_never_count_anything_twice
         assert len((await s.exec(select(EvalCostLine).where(EvalCostLine.run_id == rid))).all()) == len(lines), "ingesting the same folder again changes nothing"
 
 
+async def t_a_stored_run_verifies_and_a_changed_or_missing_file_is_found(rig: Rig, folder: Path) -> None:
+    await rig.clean()
+    report = await ingest_run(rig.lake, folder)
+    async with await rig.session() as s:
+        ok = await run_tools.verify(s, rig.lake, report.run_id)
+        assert ok["ok"] and ok["objects_checked"] >= 3 and ok["result_rows"] == ok["executions"] == len(CASES), ok
+        run = (await s.exec(select(EvalRun).where(EvalRun.run_id == report.run_id))).one()
+        key = run.results_key
+    rig.store._objects[key] = (b"changed after the fact\n", rig.store._objects[key][1])        # the stored bytes no longer match what was recorded
+    async with await rig.session() as s:
+        bad = await run_tools.verify(s, rig.lake, report.run_id)
+        assert not bad["ok"] and any("checksum" in p and key in p for p in bad["problems"]), bad
+    del rig.store._objects[key]                                                                  # and a file that has gone missing
+    async with await rig.session() as s:
+        gone = await run_tools.verify(s, rig.lake, report.run_id)
+        assert not gone["ok"] and any("cannot be read" in p and key in p for p in gone["problems"]), gone
+        try:
+            await run_tools.verify(s, rig.lake, "no-such-run")
+        except run_tools.RunToolError as exc:
+            assert exc.status == 404
+        else:
+            raise AssertionError("an unknown run was verified")
+
+
+async def t_two_stored_runs_are_compared_case_by_case(rig: Rig, folder: Path) -> None:
+    await rig.clean()
+    base = {"category": "agent-routing", "verification": "code_verified", "assertion_counts": {"passed": 1}, "artifact": None, "latency_ms": 100, "usage": None, "operation": "rules.evaluate", "repetition": 1}
+    stamp = int(time.time() * 1000)
+
+    def run(tag: str, statuses: dict, model: str):
+        rid = f"t-cmp-{tag}-{stamp}"
+        rows = [{**base, "case_id": c, "status": st} for c, st in statuses.items()]
+        root = custom_run(ROOT / "runs" / f"_test-cmp-{tag}-{stamp}", rid, rows, {"kind": "suite", "model_id": model, "provider": "openai", "mode": "agent"})
+        return rid, root
+    ra, root_a = run("a", {"C1": "passed", "C2": "passed", "C3": "failed", "C4": "passed"}, "openai/gpt-4o-mini")
+    rb, root_b = run("b", {"C1": "passed", "C2": "failed", "C3": "passed", "C4": "blocked"}, "openai/gpt-4.1")
+    await ingest_run(rig.lake, root_a)
+    await ingest_run(rig.lake, root_b)
+    async with await rig.session() as s:
+        c = await run_tools.compare(s, ra, rb)
+        assert [x["case"] for x in c["newly_failing"]] == ["C2"] and [x["case"] for x in c["newly_passing"]] == ["C3"], c
+        assert [x["case"] for x in c["changed"]] == ["C4"] and c["unchanged"] == 1 and c["cases_compared"] == 4
+        assert (c["a"]["ran"], c["a"]["passed"]) == (4, 3) and (c["b"]["ran"], c["b"]["passed"]) == (3, 2), (c["a"], c["b"])
+        assert abs(c["delta"]["pass_rate"] - (2 / 3 - 3 / 4)) < 1e-9 and any("model" in n for n in c["notes"])
+        assert c["a_run"]["model"] == "openai/gpt-4o-mini" and c["b_run"]["model"] == "openai/gpt-4.1"
+        for args, status in (((ra, ra), 422), ((ra, "no-such-run"), 404)):
+            try:
+                await run_tools.compare(s, *args)
+            except run_tools.RunToolError as exc:
+                assert exc.status == status, (args, exc.status)
+            else:
+                raise AssertionError(f"{args} was compared")
+
+
 TESTS: List[Callable] = [t_a_real_run_is_stored_completely, t_ingesting_twice_changes_nothing, t_a_tampered_or_reused_run_is_refused,
                          t_the_database_refuses_to_change_a_finished_run, t_unknown_cost_stays_unknown_and_known_cost_follows_the_active_price,
-                         t_cost_lines_split_the_spending_exactly_and_never_count_anything_twice]
+                         t_cost_lines_split_the_spending_exactly_and_never_count_anything_twice,
+                         t_a_stored_run_verifies_and_a_changed_or_missing_file_is_found, t_two_stored_runs_are_compared_case_by_case]
 
 
 async def main() -> int:

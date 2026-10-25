@@ -3,13 +3,51 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { tx } from "@/lib/i18n/tx";
-import { RECON_LABEL, addStatement, getCertainty, getStatement, listStatements, money, percent, reconcileStatement, COMPONENT_LABEL,
-  type CertaintyWindow, type Reconciliation, type Statement, type StatementDetail, type StatementIn } from "@/lib/evalCosts";
+import { RECON_LABEL, addStatement, getCertainty, getStatement, listStatements, money, percent, previewStatementFile, reconcileStatement, COMPONENT_LABEL,
+  type CertaintyWindow, type DayGap, type ImportPreview, type Reconciliation, type Statement, type StatementDetail, type StatementIn, type UsageGap } from "@/lib/evalCosts";
 import { useQueryState } from "@/lib/useQueryState";
 import { Badge, Drawer, Field, Modal, Notice, RECON_TONE, btnGhost, btnPrimary, card, day, inputCls, shortId, when } from "./ui";
 
 type Fmt = (usd: number | null | undefined) => string;
 const PROVIDERS = ["openai", "anthropic", "gemini"];
+
+const VERDICT_LABEL: Record<DayGap["verdict"], string> = { matches: "matches", billed_not_recorded: "billed, nothing recorded", billed_more: "billed more than recorded", recorded_more: "recorded more than billed" };
+const VERDICT_TONE: Record<DayGap["verdict"], "green" | "red" | "amber" | "violet"> = { matches: "green", billed_not_recorded: "red", billed_more: "amber", recorded_more: "violet" };
+
+/** Where a bill and the recorded lines part ways: the days and models with the biggest gaps, in words and in a table. */
+export function GapView({ gap, billedLabel = "Billed" }: { gap: UsageGap; billedLabel?: string }) {
+  const fm = (usd: number) => money(usd);
+  return (
+    <div className="space-y-2" data-testid="gap-view">
+      <ul className="list-disc space-y-0.5 pl-4 text-[11px] text-slate-700 dark:text-slate-200">{gap.explanation.map((e) => <li key={e}>{e}</li>)}</ul>
+      {gap.largest_days.length > 0 && (
+        <table className="w-full text-[11px]" data-testid="gap-days">
+          <thead><tr className="text-left text-slate-400"><th className="py-1 font-semibold">{tx("Day with the biggest gaps")}</th><th className="text-right font-semibold">{tx(billedLabel)}</th><th className="text-right font-semibold">{tx("Recorded")}</th><th className="text-right font-semibold">{tx("Difference")}</th><th /></tr></thead>
+          <tbody>{gap.largest_days.map((d) => <tr key={d.key} className="border-t border-slate-100"><td className="py-1">{d.key}</td><td className="text-right">{fm(d.billed_usd)}</td><td className="text-right">{fm(d.recorded_usd)}</td>
+            <td className="text-right font-semibold">{d.difference_usd >= 0 ? "+" : "−"}{fm(Math.abs(d.difference_usd))}</td><td className="pl-2"><Badge tone={VERDICT_TONE[d.verdict]}>{tx(VERDICT_LABEL[d.verdict])}</Badge></td></tr>)}</tbody>
+        </table>
+      )}
+      {gap.largest_models.length > 0 && (
+        <table className="w-full text-[11px]" data-testid="gap-models">
+          <thead><tr className="text-left text-slate-400"><th className="py-1 font-semibold">{tx("Model with the biggest gaps")}</th><th className="text-right font-semibold">{tx(billedLabel)}</th><th className="text-right font-semibold">{tx("Recorded")}</th><th className="text-right font-semibold">{tx("Difference")}</th><th /></tr></thead>
+          <tbody>{gap.largest_models.map((d) => <tr key={d.key} className="border-t border-slate-100"><td className="py-1">{d.key}</td><td className="text-right">{fm(d.billed_usd)}</td><td className="text-right">{fm(d.recorded_usd)}</td>
+            <td className="text-right font-semibold">{d.difference_usd >= 0 ? "+" : "−"}{fm(Math.abs(d.difference_usd))}</td><td className="pl-2"><Badge tone={VERDICT_TONE[d.verdict]}>{tx(VERDICT_LABEL[d.verdict])}</Badge></td></tr>)}</tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+export function ImportSummary({ p }: { p: ImportPreview }) {
+  return (
+    <div className="mt-3 space-y-2 text-[11px]" data-testid="import-summary">
+      <p className="text-slate-700 dark:text-slate-200"><b>{p.filename}</b>: {p.rows_used} {tx("of")} {p.rows} {tx("rows read")} · {p.period_start} → {p.period_end} · {tx("billed")} <b>{p.billed_usd === null ? tx("not in the file: type it below") : money(p.billed_usd)}</b> · {tx("recorded")} <b>{money(p.recorded_usd)}</b></p>
+      <p className="text-slate-500">{tx("Columns used")}: {Object.entries(p.columns).map(([k, v]) => `${k} ← “${v}”`).join(", ")}</p>
+      {p.warnings.map((w) => <Notice key={w} kind="warn">{w}</Notice>)}
+      <GapView gap={p.gap} />
+    </div>
+  );
+}
 
 export function StatementForm({ replaces, onClose, onSaved }: { replaces?: Statement | StatementDetail | null; onClose: () => void; onSaved: (r: { statement: Statement; reconciliation: Reconciliation; scope_note: string }) => void }) {
   const [provider, setProvider] = useState(replaces?.provider ?? "openai");
@@ -26,6 +64,27 @@ export function StatementForm({ replaces, onClose, onSaved }: { replaces?: State
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [imported, setImported] = useState<ImportPreview | null>(null);
+  const [reading, setReading] = useState(false);
+  async function readFile(file: File | undefined) {
+    if (!file) return;
+    setReading(true);
+    setError(null);
+    try {
+      const p = await previewStatementFile(provider, file.name, await file.text());
+      setImported(p);
+      setStart(p.period_start);
+      setEnd(p.period_end);
+      if (p.billed_usd !== null) setBilled(String(p.billed_usd));
+      if (p.tokens) { setTin(String(p.tokens.input)); setTout(String(p.tokens.output)); setTcached(p.tokens.cached ? String(p.tokens.cached) : ""); }
+      setSource((cur) => cur || `uploaded ${file.name} (usage export from the ${provider} usage page)`);
+    } catch (e) {
+      setImported(null);
+      setError(e instanceof Error ? e.message : "The file could not be read.");
+    } finally {
+      setReading(false);
+    }
+  }
   const int = (s: string) => (s.trim() === "" ? undefined : Number(s.replace(/,/g, "")));
   const problems = [
     !start || !end ? tx("Choose the first and last day of the period.") : end < start ? tx("The period cannot end before it starts.") : null,
@@ -37,7 +96,8 @@ export function StatementForm({ replaces, onClose, onSaved }: { replaces?: State
     setBusy(true);
     setError(null);
     const body: StatementIn = { provider, period_start: start, period_end: end, billed_usd: Number(billed), reference: reference.trim() || undefined, source: source.trim(), billed_input_tokens: int(tin), billed_output_tokens: int(tout),
-      billed_cached_tokens: int(tcached), tolerance_pct: Number(tolPct), tolerance_usd: Number(tolUsd), supersedes_id: replaces?.id, note: note.trim() || undefined };
+      billed_cached_tokens: int(tcached), tolerance_pct: Number(tolPct), tolerance_usd: Number(tolUsd), supersedes_id: replaces?.id, note: note.trim() || undefined,
+      usage_detail: imported ? { by_day: imported.by_day, by_model: imported.by_model, filename: imported.filename } : undefined };
     try {
       onSaved(await addStatement(body));
     } catch (e) {
@@ -49,6 +109,15 @@ export function StatementForm({ replaces, onClose, onSaved }: { replaces?: State
   return (
     <Modal title={replaces ? tx("Replace a bill with a correction") : tx("Enter what a provider billed")} onClose={onClose} wide>
       <Notice kind="info">{tx("Enter the figure for the API key or project that evaluations use. A key other callers also use will always show more billed than was recorded, and that gap is not missing attribution.")}</Notice>
+      {!replaces && (
+        <div className="rounded-lg border border-dashed border-slate-300 p-3 dark:border-slate-600" data-testid="import-box">
+          <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">{tx("Faster: import the provider's usage export")}</p>
+          <p className="mt-0.5 text-[11px] text-slate-500">{tx("On the provider's usage page, export the period as CSV and choose it here. The period, the billed total and the tokens are filled in for you, and the comparison shows which days and models explain any difference. Nothing is saved until you press Save.")}</p>
+          <input type="file" accept=".csv,text/csv" disabled={reading} onChange={(e) => readFile(e.target.files?.[0])} className="mt-2 block w-full text-xs text-slate-600 file:mr-3 file:rounded-lg file:border file:border-slate-200 file:bg-white file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-slate-700" data-testid="import-file" aria-label={tx("Usage export (CSV)")} />
+          {reading && <p className="mt-2 text-[11px] text-slate-500">{tx("Reading…")}</p>}
+          {imported && <ImportSummary p={imported} />}
+        </div>
+      )}
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label={tx("Provider")}><select className={inputCls} value={provider} onChange={(e) => setProvider(e.target.value)} disabled={!!replaces} data-testid="stmt-provider">{PROVIDERS.map((p) => <option key={p} value={p}>{p}</option>)}</select></Field>
         <Field label={tx("Billed (US dollars)")}><input className={inputCls} inputMode="decimal" value={billed} onChange={(e) => setBilled(e.target.value)} data-testid="stmt-billed" /></Field>
@@ -147,6 +216,7 @@ export function StatementDetailView({ d, live, fmt }: { d: StatementDetail; live
           <p className="text-[11px] text-slate-500">{tx("Allowed to differ")}: {fmt(live.allowed_usd)} ({live.tolerance_pct}% {tx("of the bill, never less than")} {money(live.tolerance_usd)}). {live.unknown_lines > 0 ? `${live.unknown_lines} ${tx("recorded line(s) could not be priced.")}` : ""}</p>
           <ul className="list-disc pl-4 space-y-1 text-slate-700" data-testid="explanation">{live.explanation.map((e) => <li key={e}>{e}</li>)}</ul>
           {live.tokens && <TokenTable tokens={live.tokens} />}
+          {live.gap && <div><h3 className="font-bold text-slate-800 mb-1">{tx("Where the difference is (from the imported usage export)")}</h3><GapView gap={live.gap} /></div>}
           <div><h3 className="font-bold text-slate-800 mb-1">{tx("What was recorded in the period, by what it paid for")}</h3>
             <ul className="space-y-0.5">{Object.entries(live.recorded.by_component).sort((a, b) => b[1].usd - a[1].usd).map(([c, v]) => <li key={c} className="flex justify-between"><span>{tx(COMPONENT_LABEL[c] ?? c)} <span className="text-slate-400">({v.lines})</span></span><b>{fmt(v.usd)}</b></li>)}</ul></div>
           {live.recorded.top_runs.length > 0 && (

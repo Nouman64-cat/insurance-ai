@@ -84,6 +84,13 @@ partly = lines(result(usage=usage({"Chat Agent": {"gpt-4.1-2025-04-14": tok(1, 1
 check("a result with one priced and one unpriced model keeps the known money and flags the unknown", cl.known_total(partly) > 0 and sum(1 for l in partly if l["usd"] is None) == 1 and cl.unknown_executions(partly) == 1, partly)
 check("scripted models are priced as free, not unknown", (lambda x: x["usd"] == 0.0 and x["cost_kind"] == "estimated")(lines(result(usage=usage({"Chat Agent": {"mock-oracle": tok(1, 100, 10)}}), llm_calls=1), candidate="mock/mock-oracle", synthetic=True)[0]))
 
+emb = usage({"Chat Agent": {"gpt-4.1-2025-04-14": tok(1, 800, 40)}}); emb["foreign"] = {"rows": 1, "input_tokens": 1000000, "output_tokens": 0, "cached_tokens": 0, "by_model": {"gemini-embedding-001": tok(1, 1000000, 0)},
+                                                                                     "by_service": {"Agent Copilot (embeddings)": {"gemini-embedding-001": tok(1, 1000000, 0)}}}
+el = lines(result(usage=emb, llm_calls=1))
+e1 = next(l for l in el if l["model"] == "gemini-embedding-001")
+check("an embedding call seen during an execution is EMBEDDING spend (not 'unattributed'), priced at the embedding rate, with the provider read from the model name", e1["component"] == "embedding" and abs(e1["usd"] - 0.15) < 1e-9 and e1["provider"] == "gemini" and e1["cost_kind"] == "estimated", e1)
+check("an embedding model is recognised by name, whoever called it", cl.component_for("Agent Copilot (embeddings)", "gemini-embedding-001", operation="chat", candidate="openai/gpt-4.1", synthetic=False, mode="agent") == "embedding")
+
 # ── nothing known is never zero ───────────────────────────────────────────────────────────────────────────────────────
 for status in ("missing", "unavailable", "ambiguous", "unknown"):
     one = lines(result(usage={"status": status, "calls": None, "note": "the ledger could not be read"}, llm_calls=None))

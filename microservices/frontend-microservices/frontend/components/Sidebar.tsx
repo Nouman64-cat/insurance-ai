@@ -11,6 +11,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { tx } from "@/lib/i18n/tx";
 import { appHref } from "@/lib/appLinks";
+import { getOverview } from "@/lib/evalDrift";
 
 
 
@@ -653,6 +654,16 @@ export function Sidebar() {
   const [userName, setUserName] = useState("Saira Reviewer");
   const [userEmail, setUserEmail] = useState("Senior Underwriter");
   const [userRole, setUserRole] = useState("");
+  // Super Admins see how many drift findings are waiting for a decision beside "Drift review"; if the count cannot be read there is simply no badge.
+  const [openDrift, setOpenDrift] = useState(0);
+  useEffect(() => {
+    if (userRole !== "SuperAdmin") return;
+    let live = true;
+    const load = () => getOverview().then((o) => { if (live) setOpenDrift(o.open); }).catch(() => { if (live) setOpenDrift(0); });
+    load();
+    const t = setInterval(load, 300000);
+    return () => { live = false; clearInterval(t); };
+  }, [userRole]);
   const [navMode, setNavMode] = useState<"all" | "working">("all");
   const [expandedMenus, setExpandedMenus] = useState<Record<string, boolean>>({});
 
@@ -996,6 +1007,9 @@ export function Sidebar() {
                                 />
 
                                 <span className="truncate tracking-wide">{t(`nav.${sub.label}`)}</span>
+                                {sub.href.endsWith("tool=drift") && openDrift > 0 && (
+                                  <span data-testid="drift-badge" aria-label={`${openDrift} open drift findings`} className="ms-auto rounded-full bg-amber-100 px-1.5 text-[10px] font-bold text-amber-700">{openDrift > 99 ? "99+" : openDrift}</span>
+                                )}
                               </Link>
                             );
                           })}

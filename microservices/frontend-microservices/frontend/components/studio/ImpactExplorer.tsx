@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, 
 import TraceDrawer from "@/components/benchmarking/TraceDrawer";
 import { Decision } from "@/components/evaluation/DriftWorkspace";
 import { tx } from "@/lib/i18n/tx";
-import { money } from "@/lib/evalCosts";
+import { show } from "@/lib/evalCosts";
 import { getDraft, type DriftAction, type DriftItem } from "@/lib/evalDrift";
 import { TEMPLATES_ROUTE, getImpact, listImpactCandidates, studioHref, type Impact, type ImpactCandidate, type ImpactSuggestion } from "@/lib/evalStudio";
 import { useQueryState } from "@/lib/useQueryState";
@@ -283,7 +283,8 @@ export function ImpactView({ impact, onDecide, onOpenTrace, onDraft, draft }: { 
         </Step>
         <Step n={4} title={tx("Approval")} state={states[3]} testId="step-approval" open={open.has(3)} onToggle={() => flip(3)} last={false}
           summary={accepted.length > 0 ? `${accepted.length} ${tx("accepted: each is a draft case, not a change to the dataset")}` : tx("Nothing accepted yet. You write the expected value yourself; the system never does.")}>
-          {accepted.map((u) => <div key={u.id} className="flex items-center justify-between gap-2"><span className="truncate text-[11px] text-slate-600 dark:text-slate-300">{u.summary.slice(0, 80)}</span>{u.needs_expected && <button type="button" className={btn} onClick={() => onDraft(u)}>{tx("Prepare draft")}</button>}</div>)}
+          {accepted.map((u) => <div key={u.id} className="flex items-center justify-between gap-2"><span className="truncate text-[11px] text-slate-600 dark:text-slate-300">{u.summary.slice(0, 80)}</span><span className="flex shrink-0 items-center gap-1.5">{u.needs_expected && <button type="button" className={btn} onClick={() => onDraft(u)}>{tx("Prepare draft")}</button>}
+            {u.dataset && <Link className={btn} href={studioHref({ tool: "datasets", dataset: u.dataset })} data-testid="open-in-dataset-manager">{tx("Open in Dataset Manager")}</Link>}</span></div>)}
           {draft && <pre className="max-h-48 overflow-auto rounded-md bg-slate-50 p-2 text-[10px] dark:bg-slate-800" data-testid="draft">{draft}</pre>}
           <p className="text-[10px] text-slate-400">{impact.principle}</p>
         </Step>
@@ -309,7 +310,7 @@ export function ImpactView({ impact, onDecide, onOpenTrace, onDraft, draft }: { 
             <div key={c.model} className="rounded-lg border border-slate-200 p-2 dark:border-slate-700" data-compare={c.model}>
               <p className="text-[11px] font-semibold text-slate-800 dark:text-slate-100">{c.model}</p>
               <p className="text-[11px] text-slate-600 dark:text-slate-300">{tx("pass rate")} {c.before.pass_rate === null ? "—" : `${(c.before.pass_rate * 100).toFixed(0)}%`} → {c.after.pass_rate === null ? "—" : `${(c.after.pass_rate * 100).toFixed(0)}%`} {delta(c.pass_rate_delta, (x) => `${(x * 100).toFixed(1)} pts`, true)}</p>
-              <p className="text-[11px] text-slate-600 dark:text-slate-300">{tx("cost per execution")} {money(c.before.ran ? c.before.cost_usd / c.before.ran : null)} → {money(c.after.ran ? c.after.cost_usd / c.after.ran : null)} {delta(c.cost_per_execution_delta, (x) => money(x), false)}</p>
+              <p className="text-[11px] text-slate-600 dark:text-slate-300">{tx("cost per execution")} {show(c.before.ran ? c.before.cost_usd / c.before.ran : null)} → {show(c.after.ran ? c.after.cost_usd / c.after.ran : null)} {delta(c.cost_per_execution_delta, (x) => show(x), false)}</p>
             </div>
           ))}
         </Step>

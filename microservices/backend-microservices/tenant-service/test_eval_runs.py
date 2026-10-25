@@ -15,6 +15,7 @@ from sqlmodel import select
 import database
 from routers.auth import create_access_token
 from shared.models.core import Role, User
+from shared.models.evaluation import EvalCaseResult, EvalMetricScore, EvalRun
 
 BASE = "http://localhost:8001"
 FAILS = 0
@@ -44,6 +45,28 @@ async def main() -> int:
             check(f"anonymous callers are refused: {path}", (await c.get(path)).status_code == 401)
             check(f"an ordinary user is refused: {path}", (await c.get(path, headers=O)).status_code == 403)
         check("estimating is refused to an ordinary user", (await c.post("/eval/jobs/estimate", headers=O, json={})).status_code == 403)
+
+        pair = [r for r in runs["runs"] if r["state"] == "complete" and r["model"] and not r["model"].startswith("mock/") and r["dataset"] == "individual-single-turn" and r["executions"] >= 40][:2]
+        for path in ("/eval/runs/compare?a=x&b=y", "/eval/runs/someid/report", "/eval/runs/someid/artifacts/summary.json"):
+            check(f"anonymous callers are refused: {path.split('?')[0]}", (await c.get(path)).status_code == 401)
+            check(f"an ordinary user is refused: {path.split('?')[0]}", (await c.get(path, headers=O)).status_code == 403)
+        check("two stored real runs are on hand to compare", len(pair) == 2)
+        if len(pair) == 2:
+            a_, b_ = pair[1]["run_id"], pair[0]["run_id"]                                      # older, newer
+            cmp_ = (await c.get("/eval/runs/compare", headers=A, params={"a": a_, "b": b_})).json()
+            check("a comparison names both runs and counts every case once: the changes plus the unchanged add up to the cases in both", cmp_["a_run"]["run_id"] == a_ and cmp_["b_run"]["run_id"] == b_
+                  and len(cmp_["newly_failing"]) + len(cmp_["newly_passing"]) + len(cmp_["changed"]) + cmp_["unchanged"] == cmp_["cases_compared"], str(cmp_)[:300])
+            check("the comparison's totals are the runs' own: executions and passed", cmp_["a"]["executions"] == pair[1]["executions"] and cmp_["b"]["executions"] == pair[0]["executions"] and cmp_["a"]["passed"] == pair[1]["passed"] and cmp_["b"]["passed"] == pair[0]["passed"],
+                  f"{cmp_['a']} {pair[1]['passed']}")
+            check("the comparison swaps cleanly: what fails in one direction passes in the other", sorted(x["case"] for x in (await c.get("/eval/runs/compare", headers=A, params={"a": b_, "b": a_})).json()["newly_passing"]) == sorted(x["case"] for x in cmp_["newly_failing"]))
+            check("comparing a run with itself and an unknown run are refused", (await c.get("/eval/runs/compare", headers=A, params={"a": a_, "b": a_})).status_code == 422 and (await c.get("/eval/runs/compare", headers=A, params={"a": a_, "b": "nope"})).status_code == 404)
+            check("a different model is said to be not like for like", any("not like for like" in n for n in cmp_["notes"]) == (pair[0]["model"] != pair[1]["model"] or pair[0]["version"] != pair[1]["version"]), cmp_["notes"])
+            rep = await c.get(f"/eval/runs/{a_}/report", headers=A)
+            check("the stored report of a run is served as text", rep.status_code == 200 and rep.headers["content-type"].startswith("text/plain") and len(rep.text) > 100, rep.text[:100])
+            art = await c.get(f"/eval/runs/{a_}/artifacts/summary.json", headers=A)
+            check("a stored file of the run is served, and is that run's summary", art.status_code == 200 and art.json()["run_id"] == a_, art.text[:120])
+            check("a file name with a path, or one that does not exist, is refused", (await c.get(f"/eval/runs/{a_}/artifacts/..%2Fsecret", headers=A)).status_code in (404, 422) and (await c.get(f"/eval/runs/{a_}/artifacts/nope.json", headers=A)).status_code == 404)
+            check("a report for an unknown run is a 404", (await c.get("/eval/runs/nope/report", headers=A)).status_code == 404)
 
         real = next((r for r in runs["runs"] if r["model"] and not r["model"].startswith("mock/") and r["kind"] == "suite" and r["executions"] >= 40), None)
         check("a real-model run is stored (the single-turn run)", real is not None)
@@ -155,6 +178,16 @@ async def main() -> int:
         for jid in job_ids:
             await c.post(f"/eval/jobs/{jid}/cancel", headers=A)
         states = [(await c.get(f"/eval/jobs/{j}", headers=A)).json()["state"] for j in job_ids]
+        async with database._session_factory() as sdb:                 # judge scores of a real run: stored, and returned by the API exactly as stored
+            row = (await sdb.exec(select(EvalMetricScore, EvalCaseResult).join(EvalCaseResult, EvalCaseResult.id == EvalMetricScore.result_id).join(EvalRun, EvalRun.id == EvalCaseResult.run_row_id)
+                                  .where(EvalRun.synthetic_model == False, EvalMetricScore.score != None).limit(1))).first()          # noqa: E712,E711
+        check("a real run has judge scores stored", row is not None)
+        if row:
+            stored, owner = row
+            served = (await c.get(f"/eval/results/{owner.id}", headers=A)).json()["judge_scores"]
+            match = [x for x in served if x["metric"] == stored.metric and x["judge_model"] == stored.judge_model]
+            check("the API returns the stored judge score: metric, score, threshold, verdict, reason and judge model", len(match) >= 1 and abs(match[0]["score"] - stored.score) < 1e-9 and match[0]["threshold"] == stored.threshold
+                  and match[0]["passed"] == stored.passed and (match[0]["reason"] or "") == (stored.reason or ""), str(match)[:200])
         check("the test jobs were cancelled before any worker took them", all(s in ("cancelled", "lost") for s in states), str(states))
     print(f"\n{'PASS' if not FAILS else 'FAILED'}: {FAILS} failed")
     return 1 if FAILS else 0

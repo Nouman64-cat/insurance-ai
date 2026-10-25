@@ -420,6 +420,17 @@ async def post_events(job_id: UUID, body: Events, session: AsyncSession = Depend
         if kind == "progress":
             job.progress = data
     job.heartbeat_at = datetime.utcnow()
+    if not job.cancel_requested and any(e.get("kind") == "case" for e in body.events):
+        await session.flush()
+        from services import eval_budget
+        verdict = await eval_budget.check_running(session, job)
+        if not verdict["allowed"]:                                                    # a limit that is enforced has been passed: stop the run, keep what it has
+            job.cancel_requested = True
+            reason = "; ".join(verdict["messages"])[:600]
+            await _append(session, job, "log", f"stopped by the spending limit: {reason}. The case in flight will finish, then the run stops and keeps what it has.",
+                          {"cancel_requested": True, "stopped_by": "budget", "job_spent_usd": verdict.get("job_spent_usd")})
+            await record_standalone(module="administration", action="eval.budget.stopped_running_job", entity_type="eval_job", entity_id=str(job.id), tenant_id=None, actor_id=None,
+                                    actor_type="SYSTEM", actor_role="SYSTEM", metadata={"job_spent_usd": verdict.get("job_spent_usd"), "messages": verdict["messages"][:3]})
     session.add(job)
     await session.commit()
     return {"cancel_requested": job.cancel_requested, "state": job.state}

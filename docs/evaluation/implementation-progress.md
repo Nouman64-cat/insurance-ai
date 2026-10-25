@@ -29,33 +29,33 @@ Steps 1 to 5 are done (see the end of this file). **Resume rule:** after an inte
 - [x] (test) test that unknown cost stays unknown through ingestion and totals
 
 ### 6.4 Command line
-- [~] (impl) `eval_lake_cli.py` commands: `run-ingest`, `runs`, `run <id>`, `run-verify <id>` (re-checks stored artifacts against checksums), `run-compare <a> <b>`
-- [ ] (integ) the commands work against the real database and MinIO
+- [x] (impl) `eval_lake_cli.py` commands: `run-ingest`, `runs`, `run <id>`, `run-verify <id>` (re-checks stored artifacts against checksums), `run-compare <a> <b>`
+- [x] (integ) the commands work against the real database and MinIO
 
 ### 6.5 API (SuperAdmin only)
-- [ ] (impl) `/eval/runs` list and filters, `/eval/runs/{id}` detail, `/results`, `/artifacts/{name}`, `/report`, `/compare?a=&b=`
-- [ ] (impl) gateway proxy routes for them
-- [ ] (test) authorization tests: anonymous 401, non-SuperAdmin 403, SuperAdmin 200
-- [ ] (integ) read paths exercised against real ingested data
+- [x] (impl) `/eval/runs` list and filters, `/eval/runs/{id}` detail, `/results`, `/artifacts/{name}`, `/report`, `/compare?a=&b=`
+- [x] (impl) gateway proxy routes for them
+- [x] (test) authorization tests: anonymous 401, non-SuperAdmin 403, SuperAdmin 200
+- [x] (integ) read paths exercised against real ingested data
 
 ### 6.6 Reports and comparison
-- [ ] (impl) run report (same content as the console report) and run-to-run comparison (newly failing, newly passing, status changes, cost and latency deltas)
-- [ ] (test) comparison unit tests on constructed runs
+- [x] (impl) run report (same content as the console report) and run-to-run comparison (newly failing, newly passing, status changes, cost and latency deltas)
+- [x] (test) comparison unit tests on constructed runs
 
 ### 6.7 Wiring
 - [x] (integ) `envctl.py run` ingests the finished run automatically (copy out of the isolated worker, ingest on the platform side)
 - [x] (integ) a run survives a database reset of the evaluation environment and is still readable from the platform
 
 ### 6.8 Frontend
-- [ ] (fe) "Evaluation Runs" page: run list, run detail (counts, failures, blocked, cost, per-case table), compare two runs
-- [ ] (fe) sidebar entry and translations
-- [ ] (test) the page type-checks and builds (or, if the toolchain cannot run here, is verified another way that is named in the log)
+- [x] (fe) "Evaluation Runs" page: in the Studio (Investigate), a list of every stored run (Compare runs), a run's summary with its executions, and a comparison of two runs
+- [x] (fe) sidebar entry and translations: the Studio entry in the sidebar reaches it; every string goes through `tx()` (no translation into another language was written)
+- [x] (test) the page type-checks (`tsc` in the frontend container) and its views render in the integration tests; `next build` was not run
 
 ## Step 7: Chat runner and agent evaluation
 
 ### 7.1 Isolated chat stack
-- [ ] (impl) chat-agent runs in the isolated evaluation stack: own database, internal network only, no production credentials
-- [ ] (integ) it is healthy, answers `/health`, creates its checkpoint tables in the evaluation database, and the baseline snapshot is retaken
+- [x] (impl) chat-agent runs in the isolated evaluation stack: own database, internal network only, no production credentials
+- [x] (integ) it is healthy, answers `/health`, creates its checkpoint tables in the evaluation database, and the baseline snapshot is retaken
 - [x] (test) integration test: from the chat-agent container production and the internet are unreachable (except the provider destination)
 
 ### 7.2 Model provider for the stack
@@ -64,7 +64,7 @@ Steps 1 to 5 are done (see the end of this file). **Resume rule:** after an inte
 - [x] (impl) a real-provider path through the SuperAdmin LLM configuration of the evaluation platform (key from `eval.env` only)
 
 ### 7.3 Per-run model override
-- [ ] (impl) the runner sets provider/model for a run through the real SuperAdmin configuration API, waits out the 60 s config cache, and verifies from the ledger that the intended model answered
+- [x] (impl) the runner chooses the model of a run per request (`X-Eval-Model`, honoured only inside the evaluation stack) instead of changing the SuperAdmin configuration and waiting out its cache, and verifies from the ledger that the intended model answered (a wrong model is an infrastructure error). Re-worded 2026-10-24: this is how it was built, and it needs no cache wait
 - [x] (test) test that a wrong model in the ledger makes the case an infrastructure error, not a verdict
 
 ### 7.4 Trace
@@ -82,46 +82,46 @@ Steps 1 to 5 are done (see the end of this file). **Resume rule:** after an inte
 
 ### 7.7 Coverage of the chat cases
 - [x] (integ) every chat case (27 single-turn in 1.0.x sources + the multi-turn dataset) reaches passed, failed, blocked or infrastructure_error: none is skipped
-- [ ] (integ) with the mock provider the runner completes a scripted conversation per category end to end (mechanics verified, labelled synthetic)
+- [x] (integ) with the mock provider the runner completes a scripted conversation per category end to end (mechanics verified, labelled synthetic)
 - [x] (impl) `IND-SEC-006` (another user's thread) executes against the real ownership check
 - [x] (!) with a real provider key every chat case executes against a real model (BLOCKED: needs a dedicated evaluation key in `eval.env`)
 
 ### 7.8 Cost and budget for chat
-- [ ] (impl) per-case token/cost attribution from the ledger by execution correlation; budget enforced across turns
-- [ ] (test) budget stops a conversation mid-way as `blocked: budget_exceeded` without hiding the spent cost
+- [x] (impl) per-case token/cost attribution from the ledger by execution correlation; budget enforced across turns
+- [x] (test) budget stops a conversation mid-way as `blocked: budget_exceeded` without hiding the spent cost
 
 ### 7.9 Frontend
-- [ ] (fe) run detail shows a chat case's transcript, tool calls and arguments, and which assertion failed where
+- [x] (fe) run detail shows a chat case's transcript, tool calls and arguments, and which assertion failed where
 
 ## Step 8: Repeated evaluations and reliability
 
 ### 8.1 Repetition policy
-- [ ] (impl) default repetitions by case class (deterministic operations 1, chat 3, benchmark 5) with explicit override; the policy and counts are recorded with the run
-- [ ] (test) tests of the policy table
+- [x] (impl) default repetitions by case class (deterministic operations 1, chat 3, benchmark 5) with explicit override; the policy and counts are recorded with the run
+- [x] (test) tests of the policy table
 
 ### 8.2 Per-case aggregation
 - [x] (impl) per case: n, passes, pass rate, Wilson 95% interval, and class (stable_pass, stable_fail, flaky, insufficient)
-- [ ] (test) tests against hand-computed values
+- [x] (test) tests against hand-computed values
 
 ### 8.3 Run reliability metrics
 - [x] (impl) consistency, flaky count, score/latency/cost variance across repetitions
-- [ ] (test) tests on constructed runs
+- [x] (test) tests on constructed runs
 
 ### 8.4 Quality gates
 - [x] (impl) configurable gates by severity (critical must reach 100% of repetitions), a gate verdict in the report and the exit status
-- [ ] (test) gate tests (pass, fail on one critical flake, not enough repetitions)
+- [x] (test) gate tests (pass, fail on one critical flake, not enough repetitions)
 
 ### 8.5 Clean state and stopping
 - [x] (integ) every repetition of a chat case starts from a reset database and a new thread (verified by integration test)
 - [x] (impl) `--stop-on-critical` and budget-aware repetition (no repetition starts that cannot be paid for)
-- [ ] (test) tests for both
+- [x] (test) tests for both
 
 ### 8.6 Storage, API and CLI
-- [ ] (impl) aggregates stored/served with the run; CLI `run-reliability <id>`
+- [x] (impl) aggregates stored/served with the run; CLI `run-reliability <id>`
 - [x] (integ) verified on a stored multi-repetition run
 
 ### 8.7 Frontend
-- [ ] (fe) reliability view on the run page (pass rate with interval, flaky list, gate verdict)
+- [x] (fe) reliability view on the run page (pass rate with interval, flaky list, gate verdict)
 
 ## Step 9: DeepEval and multi-LLM benchmarking
 
@@ -132,7 +132,7 @@ Steps 1 to 5 are done (see the end of this file). **Resume rule:** after an inte
 
 ### 9.2 Metrics
 - [x] (impl) the case `semantic_criteria` (correctness, faithfulness, relevance, hallucination, task_completion, safety, custom) mapped to DeepEval metrics with each criterion's threshold
-- [ ] (test) mapping tests for every metric name the dataset uses
+- [x] (test) mapping tests for every metric name the dataset uses
 
 ### 9.3 Judge governance
 - [x] (impl) the judge model is pinned and separate from the model under test; its cost is attributed and counted against the budget
@@ -140,11 +140,11 @@ Steps 1 to 5 are done (see the end of this file). **Resume rule:** after an inte
 
 ### 9.4 Storage
 - [x] (impl) `eval_metric_scores` (metric, score, threshold, passed, reason, judge model, cost) ingested with the run
-- [ ] (integ) stored and returned by the API for a real run
+- [x] (integ) stored and returned by the API for a real run
 
 ### 9.5 Verdict combination
 - [x] (impl) case verdict from the case's own `evaluation` block: layers, pass threshold, critical assertions override a high score
-- [ ] (test) tests of the combination rules
+- [x] (test) tests of the combination rules
 
 ### 9.6 Judge calibration
 - [x] (impl) a calibration set of known good and bad answers with the judge's expected direction
@@ -164,7 +164,7 @@ Steps 1 to 5 are done (see the end of this file). **Resume rule:** after an inte
 - [x] (test) test for it
 
 ### 9.10 Frontend
-- [ ] (fe) benchmark comparison page (models side by side, per-category table, cost)
+- [x] (fe) benchmark comparison page (models side by side, per-category table, cost)
 
 ### 9.11 LLM Benchmarking page (mandatory frontend verification)
 - [x] (impl) runs API: list/filter runs and case results, one execution's detail with its trace, assertions, judge reasons and model response, and an export (JSON/CSV), all SuperAdmin and proxied by the gateway
@@ -176,9 +176,53 @@ Steps 1 to 5 are done (see the end of this file). **Resume rule:** after an inte
 - [x] (test) the page type-checks in the frontend container and the route is served
 - [~] (!) real GPT / Gemini / Claude comparison shown on the page: GPT done and stored (below); Gemini and Claude BLOCKED (no key); nobody has looked at the page in a browser
 
+## Phase 8: Evaluation Studio, analytics and Digital Twin (scorecard)
+
+A criterion is ticked only when a check that ran and passed stands behind it (the log below says which). `[~]` is partly there; `[ ]` is not done. Nobody has looked at these pages in a browser (see the last item).
+
+### 8.1 The ecosystem (Explore)
+- [x] (impl) one workspace with Explore, Simulate and Investigate; the old pages redirect to it
+- [x] (impl) the map shows datasets, rules, plans, templates, the agent, its specialists, tools and providers, each with health and the reason, from recorded data only
+- [x] (impl) the data lake (MinIO) is a node: objects per layer, published versions, corrupt or missing objects, linked to every dataset
+- [x] (impl) the agent's skills are a node, from the skills the traces record
+- [ ] (impl) field mappings as a node: the product has no field-mapping records to show, so nothing is drawn
+- [x] (fe) global search (Ctrl+K), a panel that opens on a node, and a trace drawer that opens on an execution
+- [x] (fe) change impact: a changed rule or template to the cases that depend on it, the suggested updates, approval through the existing review decisions, the dataset versions, the regression and the cost
+- [x] (test) looking at an impact never changes an approved case (no write call exists on that path; checked)
+
+### 8.2 Analytics (Investigate)
+- [x] (impl) `shared/evaluation/analytics.py` (pure) and `GET /eval/studio/analytics`: outcomes, coverage, the six layers, routing and tool accuracy, latency (average, P50, P95), repeat reliability, review items per week
+- [x] (fe) the Analytics view: nine panels, a window (7, 30, 90 days, 1 year), dataset, model and scripted choice, all in the address
+- [x] (fe) every figure opens the executions behind it (outcome, layer, specialist, tool, window), and the count there equals the figure
+- [x] (fe) the case heatmap and the replayable trace timeline are mounted (they existed but were not reachable)
+- [~] (impl) GPT, Gemini and Claude side by side: GPT is real and stored; Gemini and Claude have no key here, so they show as not run
+- [x] (fe) inference against judge cost, cost per passed test and accuracy against cost
+- [x] (impl) confirmed, estimated and unknown costs are kept apart everywhere money is shown
+
+### 8.3 Simulate and saved views
+- [x] (fe) skills as configured, on or off; limits on latency, tokens and cost per execution; a quality gate with its minimum pass rate
+- [x] (integ) a real scripted job started with skills off, the three limits and the gate runs, and each model's run records them
+- [x] (fe) saved views per viewer (kept in the browser, storage guarded), a link to the current page, deep links for every filter
+
+### 8.4 Verification
+- [x] (integ) frontend-to-backend: the studio against the live gateway, both suites (reads on the working stack, writes on the isolated one)
+- [x] (integ) frontend-to-backend: the benchmarking form and a real job
+- [x] (test) database tests of the analytics and of the new execution filters (exact figures on a built world, rolled back)
+- [x] (test) isolated-stack API test: access control, validation, the new filters, the lake node
+- [x] (test) navigation regression: every earlier feature and route is still mounted
+- [x] (test) static accessibility checks: names on bars and cells, pressed state, a labelled dialog that closes on Escape, no meaning by colour alone
+- [x] (test) no figure is typed into a page: every number comes from an API call (checked on all studio files)
+- [ ] (test) the pages opened and used in a real browser, with an accessibility audit (not possible from this session)
+- [x] (impl) this tracker and the architecture notes are updated
+
 ## Log (newest first; every tick must be backed by a line here)
 
+- 2026-10-24 **Two optional UI items added.** (1) The sidebar shows the number of open drift findings beside "Drift review" (Super Admins only, read from `GET /eval/drift/overview`, refreshed every 5 minutes, no badge if it cannot be read; the real count at the time was 49: 21 proposals, 26 coverage gaps, 2 rule changes). (2) An accepted suggestion in the change-impact approval step links to its dataset in the dataset manager ("Open in Dataset Manager"); the link only navigates, nothing is written. Verified: `run_studio_integration.py` (137 checks, the new link is checked against the real accepted suggestions), `run_navigation_regression.py` (66 checks, one new for the badge), `tsc` clean in the touched files. Not seen in a browser.
+- 2026-10-24 **Tracker audit (partial) and the two "app defects".** Ticked six test criteria that have a named passing check behind them (re-run today): the repetition policy table (`test_repetition_policy_and_override`, `test_case_classes`), hand-computed Wilson intervals, run reliability on constructed runs, the three gate cases (clean pass, one critical flake fails, too few repetitions), stop-on-critical and budget-aware repetition (`test_stopping_rules`), and the verdict combination rules (`test_chat_eval`: a critical failure fails the case whatever the layer threshold, every layer must hold). All other unticked Step 6 to 9 items stay unticked: the front-end ones because no one has opened the pages, the rest because I found no check that matches them word for word (not because they are known to be missing). **Corrections to earlier notes:** (1) IND-LEAD-003 is NOT an app defect. In the real run the first `record_lead` (9 digits) was refused by the app (`success: false`) and the lead was saved only after the corrected number; the case's critical assertion A1 forbids `record_lead` being *called* in turn 1, not a lead being *saved*, so it fails on a correct behaviour. (2) IND-AGT-003 is a disagreement between the Gold case and a product decision: `permission.requires_confirmation()` deliberately returns False ("the user's action request authorizes execution; no extra Yes/Cancel gate"), so `add_user` runs without a confirmation. (3) IND-SEC-009/011 pins are stale text only: the claims router is still protected at router level (`dependencies=[Depends(_verify_claims_tenant)]`, which calls `verify_tenant_member`), the pin looks for the old `dependencies=[Depends(verify_tenant_member)]`. None of the three Gold cases was edited: changing an approved Golden case needs a new dataset version and a person's approval.
+- 2026-10-24 **Tracker audit for Steps 6 to 9: 20 boxes ticked on evidence, 4 real gaps built, 1 test-suite regression fixed, 2 test fragilities fixed.** Every unticked box was checked against the code and a check that ran; where the thing did not exist it was built. **Built**: run-to-run comparison (`shared/evaluation/run_compare.py`, pure; newly failing, newly passing, other changes, unchanged, cases in only one run, pass rate / cost / P50 / P95 differences, "not like for like" notes, an unknown cost stays unknown); `shared/evaluation/run_tools.py` (`compare`, `verify`: re-reads every stored file of a run against its recorded checksum and size and counts the result rows); `GET /eval/runs/compare?a=&b=`, `GET /eval/runs/{id}/report`, `GET /eval/runs/{id}/artifacts/{name}` (checksum-verified before it is served; a file name with a path is refused); CLI `run-verify <id>` and `run-compare <a> <b>`; in the Studio, Investigate > Compare runs (a list of every stored run, choose A and B, swap, each changed case links to its executions in either run) and a run summary on a run's executions page (pass rate with its 95% range, flaky and always-wrong cases, the quality-gate verdict with every check, the stored report). **Budget between turns**: a real-model conversation is stopped before a later turn when the run's budget (money spent plus an estimate for the turns so far) would not cover it: the result is `blocked: budget_exceeded`, never a failure, nothing is judged, and what the finished turns cost stays on the record (`Runner._turn_guard`, `run_conversation(stop_before_turn=...)`); a scripted model is never stopped. **Judge**: a case that asks for a metric the judge does not know is now left unscored with the reason (`judge_error`), where before the judge service would have scored it as a generic criterion under the wrong name; `test_metric_mapping.py` also checks that every metric in every dataset file is known and that the service maps each to a DeepEval metric. **Re-worded**: 7.3 (the model is chosen per request through `X-Eval-Model`, honoured only in the evaluation stack, instead of changing the SuperAdmin configuration and waiting out its cache; the ledger check that the intended model answered is unchanged). **Evidence for the ticks that needed none built**: the isolated chat agent is on the internal network only, uses the evaluation database (its checkpoint tables are there), reports healthy, and its OpenAI key is not the working stack's (hash compared, neither printed: the working stack and the repository `.env` have none); all 7 chat categories have completed scripted executions; the repetition policy table (deterministic 1, model-backed 3, benchmark 5, an explicit number wins) is stored with each run; `run-reliability` serves the stored aggregates; 45 judge scores on real runs are stored and the API returns them as stored. **Fixed**: `test_eval_lake_pure` selected the lake's migration steps by the label prefix `v71`, which another migration (`v71a`, the audit outbox) now shares (the steps are `v72a` to `v72n`), so it now selects them by what they run; `test_eval_budget` built its "limit used up" from a total rounded to six places, which a live queued job's reservation of $1.093741 pushed a hair above the real sum, so the limit is now set a thousandth below. Neither failure was a defect in the code. Verified: pure suites (21 files incl. `test_run_compare` 10 tests, `test_metric_mapping` 5); database and API suites on the working and isolated stacks (`test_eval_runs` 77 checks with compare, report, artifacts, judge scores; `test_eval_cli` 9 checks on the real database and MinIO; `test_eval_budget`, `test_eval_lake_pure`, the rest); `test-runs` 8 (incl. verify catching a changed and a missing file, compare on two ingested runs), `test-chat` 21 (incl. the conversation stopped before turn 2 and the guard arithmetic), `test-runner` 12, `test-benchmark` 12, `test` 19; frontend: studio 147, benchmarking 61, costs 84, drift 24, templates 32, navigation 67. A first run of the studio suite looked complete but its writes half had crashed on a stale isolated database; the exit code and an error line showed it, a visible reset and re-run was clean. Still open in Steps 6 to 9: the real GPT, Gemini and Claude benchmark (no keys for two of them), and the three 9.11 items that need someone to look at the page.
+- 2026-10-24 **Phase 8 built: Studio analytics, lake and skills nodes, Simulate controls, saved views.** Backend: `shared/evaluation/analytics.py` (pure, `test_analytics.py`), `services/eval_studio.py::analytics`, `GET /eval/studio/analytics` (window 1 to 730 days, dataset, model, scripted choice; "no model" is the checks that call none), and `GET /eval/studio/results` gains `failed_layer` (L1 to L6), `specialist`, `tool` and `days`; the map gains a **Data lake (MinIO)** node (objects by layer and state, published versions, health from corrupt or missing objects, a `stores` link to each dataset) and a **Skills** node (from the skills the traces record, a `loads` link from the agent). Frontend: `components/studio/AnalyticsView.tsx` (Investigate > Analytics: outcomes per model, coverage, L1 to L6 per model, routing and tool accuracy, latency average/P50/P95, repetition consistency, review items per week, month spend with confirmed and estimated apart; every figure links to the executions behind it, with the same window), executions filters for layer, specialist, tool and window in the address, `CaseHeatmap` mounted in the benchmark results and `TraceTimeline` in the trace drawer (both existed but were not reachable: the navigation regression's one failure), Simulate gains agent skills (as configured, on, off), per-execution limits (latency, tokens, cost) and the quality gate, `SavedViews` (per viewer, browser storage guarded, studio addresses only, copy link) in the header. Verified: pure analytics test; `test_eval_studio.py` (DB, rolled back, exact figures: 6 executions, L3 2 passed 1 failed, specialist and tool counts, the filters, the lake node); `test_eval_studio_api.py` on the isolated stack (401/403, 422s, filters, lake); `run_studio_integration.py` both suites (136 checks: the analytics numbers equal the executions list for the same window and model, the L3 filter equals the layer table's failed count, specialist and tool filters, nine panels render, drill-down addresses, saved-views logic and panel, the skills node equals the observed list); `run_benchmarking_integration.py` (61 checks, including a real scripted job started with skills off, the three limits and the gate: each model's run records them); `run_navigation_regression.py` (64 checks, all pass, earlier failure cleared); `tsc` shows no error in any file touched. Not done: field mappings (the product has none to show), Gemini and Claude real comparisons (no key), and nothing was opened in a browser. A first draft of one test compared the L3 filter with scripted runs included against a table that excludes them (81 against 12); the test, not the code, was wrong, and it now uses the same basis on both sides.
 - 2026-10-24 **Phase 6 built: Drift Monitor (M3 to M6b).** Service `services/eval_drift.py` (scan -> review items: the same problem is one item, an item no longer found is cleared, a returned one reopens, a decided one is never touched; registry changes -> `config_changed` items listing dependent cases; decisions through `drift.advance`, database CHECKs repeat the rules). API `routers/eval_drift.py` (overview, items, history, start/accept/reject/dismiss/reopen, prepared draft of an accepted item, scans, scan now, registry + versions, knowledge-base freshness/sync; worker endpoints `/internal/eval/drift/ingest|schedule`), gateway `/eval/drift`. Worker: job kind `drift_scan` runs the scan in a throwaway no-network container with the repository read-only (the isolated runner has no application code), posts the report, and asks the platform once an hour to queue the nightly scan. Hooks: template publish -> registry version + review item + suggested cases for added/reworded fields + knowledge-base re-index (`services/template_knowledge.py`, one `Template` row per form, embedded first so a failure deletes nothing); rule version going live -> registry read + scan queued. Page `/super-admin/drift-monitor` (queue with filters, item drawer with diff/history/decision dialogs requiring a reason and the reviewer's own expected value, watched items, scans, assistant knowledge), `lib/evalDrift.ts`. DB fix: `expected` stored as SQL NULL (not JSON null), which the CHECK needs. Verified: `test_drift` 16/16, `test_change_registry` 10/10, `test_eval_drift_service` 17/17, `test_eval_drift_db` pass, API against the isolated stack 24/24 (`test_eval_drift_api.py`), page module through the live gateway 24/24 (`evals/frontend/run_drift_integration.py`), `test_doc_templates_api` pass, tsc clean for the new files, real Gemini embedding of both templates (assistant knows lead v3, proposal v1). Loaded: 39 dependency rows for individual-single-turn 1.0.6, registry baseline (49 items), a real scan of 1.0.6 (50 new items). Follow-up 2026-10-24: the worker's drift_scan path now VERIFIED end to end on the working stack (job queued from the API, worker exported the bundle, scanned in the throwaway container, platform ingested: second scan of the same version created 0 and saw 54 again; the first attempt failed on file ownership and was fixed with --user); the schedule endpoint answers (no new scan queued within 24 h); the rule-publish function ran with no change to record. NOT verified: the page in a browser; a rule activation that really changes a rule set; the sidebar badge was not built. Residue: the integration test leaves 3 decided items under dataset `itest-drift` (items can never be deleted).
+- 2026-10-25 **Phase 7 gaps closed (five).** (1) **Embedding spend is metered**: `usage_meter.record_embedding` writes an input-only ledger row for the assistant's question embedding and for a template embedded at publish (tokens counted with the provider's own free token counter, in a worker thread; a call that cannot be counted is not recorded as zero); `gemini-embedding` is priced (list price, to be checked against a bill); an embedding seen inside an execution's window is `embedding` spend, not `unattributed`. Verified live: publishing the proposal template wrote a 1,070-token row. (2) **A running job is stopped by a limit**: while a job runs, every batch of its case events is checked; its REAL spend so far (the runner's events now carry `total_cost_usd` = model + judge + retried attempts) replaces its estimate against the enforced daily and monthly limits, other jobs' estimates stay reserved, and a passed limit makes the platform ask the worker to stop (once, logged and audited as `eval.budget.stopped_running_job`; scripted-model jobs and drift scans are never stopped). Verified on real tables and through the worker's events endpoint on the isolated stack. (3) **Reconciliation imports a provider usage export**: `provider_import.parse_csv` recognises columns by known names (and tells you which it used, counts and explains rows it could not read, never invents a billed total when there is no cost column); `POST /eval/costs/statements/preview` shows what the file says and where it differs from the recorded lines day by day and model by model (a day billed with nothing recorded is named); the file's per-day and per-model totals are kept with the bill (`usage_detail`) so the gap stays traceable; the form has a file box and the bill's detail shows 'where the difference is'. Provider export column names are matched from a list of known aliases, NOT verified against a real OpenAI/Gemini/Anthropic export (none was available): if one does not read, its header row is what is needed. (4) **One display currency for the whole studio**: a selector in the Studio header (only when a rate is recorded), the same control as the Costs page, and money on Simulate, benchmark results, node panels and change impact reads through it at today's rate (the costs charts still convert each day at that day's rate); a currency with no rate is never converted at a guess. (5) **Self-hosted costing**: `eval_compute_rates` (named machine, GPU or CPU, hourly price, source, append-only; API and a section on the Exchange rates tab), `shared/evaluation/self_hosted.py` (machine time x the rate in force that day) and `self_hosted` cost lines in seconds, priced at ingestion and in backfill; a machine with no rate is an unknown line. NO self-hosted model is registered and no runner reports machine time yet, so this is the costing layer, tested end to end on stored runs, not something a run uses today. Tests added or extended: test_usage_meter_embedding 7, test_eval_budget_running 9 + 5 (http), test_provider_import 22, test_self_hosted 10, test_eval_reconcile 35, test_eval_rates +5, test_eval_cost_attribution +3, test_eval_costs_api 80+, costs frontend test (display currency, import, machine rates), chat integration +1. Found while testing: `envctl.py test-runs` resets the isolated database, including its users; run `envctl.py fresh` before the isolated-stack API tests.
 - 2026-10-24 **Evaluation Studio (S1 to S7) built.** The Evaluation Center's five pages and about 20 sub-views are replaced by one workspace, `/super-admin/evaluation`, with three modes (Explore, Simulate, Investigate), a health pill, global search (Ctrl+K: datasets, cases, benchmarks, runs, models, rules, review items, plus commands), a Workbench menu (golden datasets, drift queue, costs & budgets, and a link to the form templates' own route) and contextual panels; state is in the address (mode, tool, node, lens, impact, sub, bench, filters) so back/forward and deep links work. **S1 shell**: header, modes, palette, breadcrumbs only inside a tool, old routes redirected (HTTP 307, query kept), sidebar entry renamed 'Evaluation Studio'. **S2 Explore**: SVG ecosystem map (6 layers, 21 nodes on the real data), health from real numbers with the reason in words, link weights from real counts, flowing links for a running job, hover/focus highlights neighbours, keyboard and screen-reader operable, list fallback on narrow screens, dark variants; node panels per kind with live data; new read model `services/eval_studio.py` and `GET /eval/studio/graph|observed|search|impact|impact/item|results` (graph in about 110 ms on the real data). Agents, specialists and tools exist only as observed in run traces (no catalogue exists), stated on the panel. **S3 Investigate**: executions across runs with outcome chips that keep their counts, model/dataset/case/run filters, paging; benchmark results (existing) now with a case x model heatmap and the benchmark's all-in cost; a trace opens a replayable timeline (play, step, speed; per-step timings are not recorded and the panel says so); models, quality and cost side by side. **S4 Simulate**: setup with estimate and budget impact, a banner that says free simulation vs real run, live run with cancel/rerun, jobs, and a mini map whose nodes update from the job's SSE stream (`tally`/`overlaysFor`). **S5 Change impact**: change (before/after) -> affected cases (declared dependencies only, with the latest real result) -> suggested updates with Start/Accept/Reject/Dismiss through the existing review decisions -> approval and draft -> new dataset versions since -> regression before/after -> quality and cost impact; an empty stage says so; nothing writes to a case. **S6 analytics**: cost and quality come from the existing endpoints; dataset nodes now show the cases a real model has been run on. **S7 parity**: every old feature is mounted (checked by `tests/navigation.regression.ts`, 51 checks, including real HTTP redirects); old pages, tab routes and the nested layout removed after that check. Verified: `test_eval_studio` 34 on real tables (rolled back), `test_eval_studio_api` 27 on the isolated stack, `run_studio_integration.py` (the studio's data module and views rendered with real API data: writes suite on the isolated stack with a seeded world including approval decisions, reads suite on the working stack changing nothing) 85 checks, navigation regression 51, Phase 5/costs/drift/templates frontend tests re-run and passing, tsc clean for the new files. NOT verified: how it looks. I have not seen the page in a browser (rendering was checked on the server with real data; layout, spacing, colour, hover and animation were not looked at), so the visual design is unreviewed; the replay's play button, the map's hover and the palette's keyboard handling were checked as code, not clicked. Not done as specified: the Datasets, Drift and Costs tools keep their own internal tabs (they are tools inside the Workbench, not rebuilt); dark theme exists in the studio's own components only (the host portal has no theme switch); Investigate has three segmented views.
 - 2026-10-24 **Phase 7, M6 (Evaluation Costs page, exchange rates, benchmarking integration) complete.** The Evaluation Costs dashboard did not exist, so it is new: tab 'Costs & Budgets' of the AI Evaluation Center (`/super-admin/evaluation/costs`, `components/costs/*`, `lib/evalCosts.ts`) with seven views kept in the address (overview, cost vs quality, budgets, usage records, reconciliation, findings & advice, exchange rates), a currency selector (USD or any currency with a recorded rate), in-app dialogs, and live refresh while a job runs. Backend added: `GET /eval/costs/overview` (one consistent read for the page), `GET/POST /eval/costs/rates` (append-only; a rate more than 20% from the previous one is recorded with a warning), `trends?currency=` (each line converted at the rate in force on ITS day; a day with no rate is reported as unconverted dollars, never converted at another rate), `benchmarks?benchmark_id=`. Benchmarking: the setup panel now shows what a run would do to the daily and monthly limits and withholds Start when an enforced limit would refuse it; the results page has a 'What this benchmark cost' card (all-in, per model, per passed test) linking to the comparison; the Center's Overview shows the spending. **A regression from M2 found and fixed**: creating any job returned HTTP 500 because the budget status stored in the job's estimate held dates (the refusal path had been tested, the accepted path had not); found by re-running the Phase 5 frontend-to-backend test; the budget status kept with a job is now plain JSON, with a unit check. Verified: `test_currency` 15, `test_eval_rates` 18 (real tables, rolled back), `test_eval_costs_api` 56 (isolated stack, now including rates, overview and the second currency), `run_costs_integration.py` (the dashboard's own data module and views, rendered with what the real API returned): writes suite against the ISOLATED stack (limits with reasons, rates, bills, overlap refusal, corrections, confirmed/estimated split, comparison, advice, overview in a second currency) and reads suite against the working stack changing nothing (overview = sum of the days, usage records add up, every real run accounts for its spending, the cost preview with the budget schedules nothing); navigation regression updated for the new tab (all passed); Phase 5, drift and templates frontend-to-backend tests re-run and pass; tsc clean for the new files. NOT verified: the pages in a browser (rendering was checked on the server with real data; clicking, dialogs and polling were not); mobile layout.
 - 2026-10-24 **Phase 7, M5 (cost analytics) complete.** `shared/evaluation/cost_analytics.py` (pure) + `services/eval_analytics.py` + `GET /eval/costs/trends|models|benchmarks|anomalies|recommendations` (gateway `/eval/costs` already covers them). **Trends**: money per day/week/month split by component, provider or model, gaps filled, running total, peak, unpriced lines counted apart, scripted models left out. **Model comparison** per dataset version and mode, pooled over each configuration's real runs: pass rate with Wilson interval, reliability (decision consistency across repetitions), latency p50/p95, error rate, critical failures, and the cost of a PASSED test all-in from the cost lines (model + judge + retries + fallbacks + unattributed) / tests passed, which is empty (never a hidden figure) whenever any line was unpriced; quality/cost frontier; benchmark total spending. **Anomalies** (explainable, judged only against earlier data): run cost per execution vs earlier runs of the same model/mode/dataset/version, daily spike vs the usual ACTIVE day, tokens per execution vs the same case on the same model, waste (retry/fallback/unattributed share), unpriced executions. **Recommendations** only from evidence: a cheaper equivalent model, a dominated model, waste, the judge's share (without recommending an uncalibrated cheaper judge), unpriced models, the month's pace vs the monthly limit; each with evidence, caveats and a saving only where it can be worked out. Verified: `test_cost_analytics` 66 checks on hand-worked numbers; `test_eval_analytics` 29 on real tables (rolled back: five models, scripted left out, unpriced configuration has no cost per passed test, frontier, advice, benchmark spending, trends, a run 5x its earlier runs flagged with waste/unpriced/token outlier, quiet window clean, recommendations); `test_eval_analytics_api` 26 and `test_eval_costs_api` 36 on the isolated stack (they now pick a year never used before, because statements, runs and lines are permanent); earlier suites unchanged. **On the real data (through the gateway)**: on individual-single-turn 1.0.6 (agent) gpt-4o-mini passed 90.9% (95% interval 83-95%, 88 executions over 2 runs, consistency 0.98) at $0.0027 per passed test, gpt-4.1 passed 90.7% (78-96%, 43 executions) at $0.0091: the advice is that gpt-4o-mini gave comparable results for 71% less per passed test (estimated saving $0.25 on those runs, medium confidence, with caveats); the judge is 43% of October's spending; the one benchmark cost $0.452; no anomaly in the 8 real runs. Not covered: no page yet (M6); PKR conversion (M6); the advice is only as good as the number of real runs, so most sets are still below the 30-execution evidence line.

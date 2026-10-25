@@ -17,6 +17,7 @@ PRICES: Dict[str, Tuple[float, float, float]] = {
     "claude-sonnet-4-5": (3.0, 0.3, 15.0),
     "gemini-2.5-flash": (0.30, 0.03, 2.50),
     "gemini-2.5-pro": (1.25, 0.125, 10.0),
+    "gemini-embedding": (0.15, 0.15, 0.0),          # an embedding is billed on input tokens only (published list price per million: check it against the provider bill)
     "mock-": (0.0, 0.0, 0.0),            # the scripted stand-in models of the evaluation stack: no money is spent, and the run says so (synthetic)
 }
 

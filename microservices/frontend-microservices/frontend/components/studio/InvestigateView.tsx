@@ -4,6 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import Results from "@/components/benchmarking/Results";
 import TraceDrawer from "@/components/benchmarking/TraceDrawer";
 import ModelsPanel from "@/components/costs/ModelsPanel";
+import AnalyticsView from "@/components/studio/AnalyticsView";
+import CompareRunsView from "@/components/studio/CompareRunsView";
+import RunSummary from "@/components/studio/RunSummary";
 import { tx } from "@/lib/i18n/tx";
 import { ms } from "@/lib/evalBenchmarks";
 import { formatter, money } from "@/lib/evalCosts";
@@ -17,9 +20,10 @@ const PAGE = 40;
 const sel = "rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1.5 text-xs";
 
 /** Executions across every run as a filterable list: status chips that show how many there are of each, then the model, the dataset and the case. Click a row for the trace, the checks and the judge's reasons. */
-export function ExecutionsView({ page, status, onStatus, model, onModel, dataset, onDataset, text, onText, synthetic, onSynthetic, offset, onOffset, onOpen }: {
+export function ExecutionsView({ page, status, onStatus, model, onModel, dataset, onDataset, text, onText, synthetic, onSynthetic, offset, onOffset, onOpen, extras = [] }: {
   page: ResultsPage; status: string; onStatus: (s: string) => void; model: string; onModel: (s: string) => void; dataset: string; onDataset: (s: string) => void; text: string; onText: (s: string) => void;
   synthetic: boolean; onSynthetic: (b: boolean) => void; offset: number; onOffset: (n: number) => void; onOpen: (r: ResultRow) => void;
+  extras?: { label: string; value: string; onClear: () => void }[];
 }) {
   const total = Object.values(page.by_status).reduce((a, b) => a + b, 0);
   return (
@@ -35,6 +39,12 @@ export function ExecutionsView({ page, status, onStatus, model, onModel, dataset
         <label className="text-[10px] text-slate-500">{tx("Case")}<input className={`${sel} block w-40`} value={text} onChange={(e) => onText(e.target.value)} placeholder="IND-AGT" /></label>
         <label className="flex items-center gap-1.5 pb-1.5 text-[11px] text-slate-600 dark:text-slate-300"><input type="checkbox" checked={synthetic} onChange={(e) => onSynthetic(e.target.checked)} />{tx("include scripted models")}</label>
       </div>
+      {extras.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 text-[11px]" data-testid="active-filters">
+          <span className="text-slate-400">{tx("Filtered by")}</span>
+          {extras.map((x) => <button key={x.label} type="button" onClick={x.onClear} className="rounded-full border border-sky-300 bg-sky-50 px-2.5 py-0.5 font-semibold text-sky-800" aria-label={`${tx("Remove filter")} ${x.label}`}>{x.label}: {x.value} ×</button>)}
+        </div>
+      )}
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
         <table className="w-full text-xs" data-testid="executions-table">
           <thead><tr className="border-b border-slate-100 text-left text-slate-400 dark:border-slate-800"><th className="px-3 py-2 font-semibold">{tx("Case")}</th><th className="font-semibold">{tx("Outcome")}</th><th className="font-semibold">{tx("Model")}</th><th className="font-semibold">{tx("Agent")}</th><th className="text-right font-semibold">{tx("Latency")}</th><th className="text-right font-semibold">{tx("Cost")}</th><th className="pr-3 text-right font-semibold">{tx("When")}</th></tr></thead>
@@ -71,26 +81,31 @@ function Executions({ onTrace }: { onTrace: (id: string) => void }) {
   const [text, setText] = useQueryState("ic", "", { replace: true });
   const [synth, setSynth] = useQueryState("isyn");
   const [runId, setRunId] = useQueryState("ir");
+  const [layer, setLayer] = useQueryState("fl");
+  const [specialist, setSpecialist] = useQueryState("sp");
+  const [tool, setTool] = useQueryState("tl");
+  const [days, setDays] = useQueryState("idays");
   const [offset, setOffset] = useQueryState("ioff", "0", { replace: true });
   const [page, setPage] = useState<ResultsPage | null>(null);
   const [error, setError] = useState<string | null>(null);
   const off = Number(offset) || 0;
   useEffect(() => {
-    const t = setTimeout(() => { listExecutions({ status, model, dataset, case: text, run_id: runId, include_synthetic: synth === "1" || !!runId, limit: PAGE, offset: off }).then((p) => { setPage(p); setError(null); }).catch((e) => setError(e instanceof Error ? e.message : "Could not load the executions.")); }, text ? 300 : 0);
+    const t = setTimeout(() => { listExecutions({ status, model, dataset, case: text, run_id: runId, include_synthetic: synth === "1" || !!runId, failed_layer: layer, specialist, tool, days: Number(days) || undefined, limit: PAGE, offset: off }).then((p) => { setPage(p); setError(null); }).catch((e) => setError(e instanceof Error ? e.message : "Could not load the executions.")); }, text ? 300 : 0);
     return () => clearTimeout(t);
-  }, [status, model, dataset, text, synth, runId, off]);
+  }, [status, model, dataset, text, synth, runId, layer, specialist, tool, days, off]);
   if (error) return <p className="text-xs text-red-600">{error}</p>;
   if (!page) return <p className="py-12 text-center text-xs text-slate-400">{tx("Loading…")}</p>;
-  return <>{runId && <p className="mb-2 text-xs text-slate-600 dark:text-slate-300">{tx("Only the executions of run")} <b className="font-mono">{runId}</b> <button type="button" className="ml-2 text-sky-600 underline" onClick={() => setRunId("")}>{tx("show all")}</button></p>}<ExecutionsView page={page} status={status} onStatus={(s) => { setStatus(s); setOffset("0"); }} model={model} onModel={(s) => { setModel(s); setOffset("0"); }} dataset={dataset} onDataset={(s) => { setDataset(s); setOffset("0"); }}
-    text={text} onText={(s) => { setText(s); setOffset("0"); }} synthetic={synth === "1"} onSynthetic={(b) => { setSynth(b ? "1" : ""); setOffset("0"); }} offset={off} onOffset={(n) => setOffset(String(n))} onOpen={(r) => onTrace(r.result_id)} /></>;
+  return <>{runId && <div className="mb-3 space-y-2"><p className="text-xs text-slate-600 dark:text-slate-300">{tx("Only the executions of run")} <b className="font-mono">{runId}</b> <button type="button" className="ml-2 text-sky-600 underline" onClick={() => setRunId("")}>{tx("show all")}</button></p><RunSummary runId={runId} /></div>}<ExecutionsView page={page} status={status} onStatus={(s) => { setStatus(s); setOffset("0"); }} model={model} onModel={(s) => { setModel(s); setOffset("0"); }} dataset={dataset} onDataset={(s) => { setDataset(s); setOffset("0"); }}
+    text={text} onText={(s) => { setText(s); setOffset("0"); }} synthetic={synth === "1"} onSynthetic={(b) => { setSynth(b ? "1" : ""); setOffset("0"); }} offset={off} onOffset={(n) => setOffset(String(n))} onOpen={(r) => onTrace(r.result_id)}
+    extras={[layer && { label: tx("failed layer"), value: layer, onClear: () => setLayer("") }, specialist && { label: tx("specialist"), value: specialist, onClear: () => setSpecialist("") }, tool && { label: tx("tool"), value: tool, onClear: () => setTool("") },
+      days && { label: tx("window"), value: `${days} ${tx("days")}`, onClear: () => setDays("") }].filter(Boolean) as { label: string; value: string; onClear: () => void }[]} /></>;
 }
 
-const SUBS = [{ id: "executions", label: "Executions" }, { id: "benchmarks", label: "Benchmarks" }, { id: "compare", label: "Models & cost" }] as const;
+const SUBS = [{ id: "analytics", label: "Analytics" }, { id: "executions", label: "Executions" }, { id: "benchmarks", label: "Benchmarks" }, { id: "runs", label: "Compare runs" }, { id: "compare", label: "Models & cost" }] as const;
 
 export default function InvestigateView() {
   const [subParam, setSub] = useQueryState("sub", "");
-  const [stFilter] = useQueryState("st");
-  const sub = (SUBS.some((s) => s.id === subParam) ? subParam : stFilter ? "executions" : "executions") as (typeof SUBS)[number]["id"];
+  const sub = (SUBS.some((s) => s.id === subParam) ? subParam : "executions") as (typeof SUBS)[number]["id"];
   const [bench, setBench] = useQueryState("bench");
   const [trace, setTrace] = useState<string | null>(null);
   const fmt = useMemo(() => formatter("USD", null), []);
@@ -99,7 +114,9 @@ export default function InvestigateView() {
       <div className="flex gap-1" role="group" aria-label={tx("What to investigate")}>
         {SUBS.map((s) => <button key={s.id} type="button" aria-pressed={sub === s.id} onClick={() => setSub(s.id)} className={`rounded-full border px-3.5 py-1.5 text-xs font-semibold ${sub === s.id ? "border-blue-500 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"}`}>{tx(s.label)}</button>)}
       </div>
+      {sub === "analytics" && <AnalyticsView />}
       {sub === "executions" && <Executions onTrace={setTrace} />}
+      {sub === "runs" && <CompareRunsView />}
       {sub === "benchmarks" && <Results initialId={bench || null} onOpened={(id) => id !== bench && setBench(id)} />}
       {sub === "compare" && <ModelsPanel fmt={fmt} refreshKey={0} />}
       {trace && <TraceDrawer resultId={trace} onClose={() => setTrace(null)} />}

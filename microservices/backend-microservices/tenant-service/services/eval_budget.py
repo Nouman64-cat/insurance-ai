@@ -11,12 +11,12 @@ from uuid import UUID
 
 from fastapi import HTTPException
 from fastapi.encoders import jsonable_encoder
-from sqlalchemy import func
+from sqlalchemy import Float, cast, func
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from shared.evaluation import budget as bl
-from shared.models.evaluation import EvalBudgetLimit, EvalJob, EvalRun
+from shared.models.evaluation import EvalBudgetLimit, EvalJob, EvalJobEvent, EvalRun
 
 ACTIVE_JOB_STATES = ("queued", "running", "cancel_requested")
 
@@ -90,3 +90,29 @@ async def set_limit(session: AsyncSession, period: str, *, limit_usd: Optional[f
 
 async def history(session: AsyncSession, limit: int = 50) -> List[EvalBudgetLimit]:
     return list((await session.exec(select(EvalBudgetLimit).order_by(EvalBudgetLimit.created_at.desc()).limit(limit))).all())
+
+
+async def running_spend(session: AsyncSession, job_id: UUID) -> float:
+    """What a job has really spent so far, added up from its own case events: the model's calls, the judge and retried attempts (`total_cost_usd`; older events carry `cost_usd` only)."""
+    amount = func.coalesce(cast(EvalJobEvent.data["total_cost_usd"].astext, Float), cast(EvalJobEvent.data["cost_usd"].astext, Float), 0.0)
+    return float((await session.exec(select(func.coalesce(func.sum(amount), 0.0)).where(EvalJobEvent.job_id == job_id, EvalJobEvent.kind == "case"))).one() or 0.0)
+
+
+async def check_running(session: AsyncSession, job: EvalJob, *, now: Optional[datetime] = None) -> Dict[str, Any]:
+    """Is a job that is already running still within the daily and monthly limits? Its own real spend so far replaces its estimate; the estimates of OTHER queued or running jobs stay reserved.
+    A limit that is enforced and has been passed stops the job (the caller cancels it). A free job (a scripted model) never spends, so it is never stopped."""
+    if (job.config or {}).get("kind") == "drift_scan":
+        return {"allowed": True, "messages": [], "periods": {}}
+    now = now or datetime.utcnow()
+    own = await running_spend(session, job.id)
+    if own <= 0:
+        return {"allowed": True, "messages": [], "periods": {}, "job_spent_usd": 0.0}
+    own_estimate = float((((job.estimate or {}).get("cost") or {}).get("usd") or {}).get("total") or 0.0) if job.state in ACTIVE_JOB_STATES else 0.0
+    others = max(0.0, await reserved_now(session) - own_estimate)                    # this job's estimate is replaced by what it has really spent
+    periods: Dict[str, Dict[str, Any]] = {}
+    for period, row in (await current_limits(session)).items():
+        spent = await spent_since(session, bl.window_start(now, period))
+        # what is already committed = finished runs + other jobs' reservations; this job's real spend so far is the "request" being added to it
+        periods[period] = bl.evaluate(row.limit_usd if row else None, spent, others, own, warn_at_pct=row.warn_at_pct if row else bl.DEFAULT_WARN_PCT, enforce=row.enforce if row else True)
+    verdict = bl.overall(periods)
+    return {**verdict, "periods": periods, "job_spent_usd": round(own, 6)}

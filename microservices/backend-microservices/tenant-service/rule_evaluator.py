@@ -71,6 +71,8 @@ class ContextDerivationService:
         customer: Optional[Customer] = None
         if customer_id:
             customer = await self.session.get(Customer, customer_id)
+            if customer is not None and customer.tenant_id != self.tenant_id:
+                customer = None                  # another tenant's customer is not found here: an id must never reach across tenants
         elif cnic:
             result = await self.session.exec(
                 select(Customer).where(Customer.tenant_id == self.tenant_id, Customer.cnic == cnic)

@@ -1,7 +1,10 @@
 """Evaluation results for the Super Admin: runs, one execution with its trace, and the views a benchmark page needs.
 
   GET /eval/runs[?kind=&model=&dataset=&state=&group_id=&job_id=]       the runs, newest first
+  GET /eval/runs/compare?a=&b=                                  run a (baseline) against run b: newly failing, newly passing, other changes, pass rate, cost and latency differences
   GET /eval/runs/{run_id}                                       one run: counts, configuration, reliability, gate, judge calibration
+  GET /eval/runs/{run_id}/report                                the run's text report, as it was written when the run ended
+  GET /eval/runs/{run_id}/artifacts/{name}                      one stored file of the run (summary.json, results.jsonl, report.txt, or a case's artifact), checksum-verified
   GET /eval/runs/{run_id}/results[?status=&stage=&case=&...]    its executions, filtered, with counts for the filter choices
   GET /eval/runs/{run_id}/export?format=csv|json                every execution of the run as a file
   GET /eval/results/{result_id}                                 one execution: assertions, judge scores and reasons, the model's answer, the trace
@@ -28,9 +31,9 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from database import get_session
 from routers.auth import verify_superadmin
 from services.eval_lake import get_lake
-from shared.evaluation import stats
+from shared.evaluation import run_tools, stats
 from shared.evaluation.object_store import LakeError
-from shared.models.evaluation import EvalAssertionResult, EvalBenchmark, EvalCaseResult, EvalMetricScore, EvalRun
+from shared.models.evaluation import EvalAssertionResult, EvalBenchmark, EvalCaseResult, EvalMetricScore, EvalRun, EvalStorageObject
 
 runs = APIRouter(prefix="/eval/runs", tags=["Evaluation runs"], dependencies=[Depends(verify_superadmin)])
 results = APIRouter(prefix="/eval/results", tags=["Evaluation runs"], dependencies=[Depends(verify_superadmin)])
@@ -139,6 +142,14 @@ async def list_runs(kind: Optional[str] = None, model: Optional[str] = None, dat
     total = (await session.exec(select(func.count()).select_from(stmt.subquery()))).one()
     rows = (await session.exec(stmt.order_by(EvalRun.created_at.desc()).offset(offset).limit(limit))).all()
     return {"total": total, "runs": [_run_out(r) for r in rows]}
+
+
+@runs.get("/compare")
+async def compare_runs(a: str = Query(min_length=1, max_length=120), b: str = Query(min_length=1, max_length=120), session: AsyncSession = Depends(get_session)):
+    try:
+        return await run_tools.compare(session, a, b)
+    except run_tools.RunToolError as exc:
+        raise HTTPException(exc.status, str(exc))
 
 
 @runs.get("/{run_id}")
@@ -300,3 +311,37 @@ async def export_benchmark(benchmark_id: str, format: str = Query(default="csv",
             out.append(_export_row(r, x))
     return _file(out, format, f"benchmark-{b.benchmark_id}", {"benchmark": {"benchmark_id": b.benchmark_id, "mode": b.mode, "dataset": b.dataset_slug, "version": b.dataset_version,
                                                                               "models": [m.get("label") for m in (b.models or [])], "synthetic": b.synthetic, "summary": b.summary}})
+
+
+async def _stored(session: AsyncSession, r: EvalRun, key: str) -> bytes:
+    """The bytes of an object stored for a run, refused if they no longer match the checksum recorded for them."""
+    import hashlib
+    reg = (await session.exec(select(EvalStorageObject).where(EvalStorageObject.object_key == key))).first()
+    if reg is None:
+        raise HTTPException(404, "No such file for this run.")
+    lake = get_lake()
+    try:
+        data = await lake._io(lake.store.get, key)
+    except LakeError:
+        raise HTTPException(404, "This file is registered but cannot be read from storage.")
+    if hashlib.sha256(data).hexdigest() != reg.sha256:
+        raise HTTPException(409, "This file no longer matches the checksum recorded for it, so it is not served.")
+    return data
+
+
+@runs.get("/{run_id}/report")
+async def run_report(run_id: str, session: AsyncSession = Depends(get_session)):
+    r = await _run(session, run_id)
+    if not r.report_key:
+        raise HTTPException(404, "This run has no stored report.")
+    return Response(content=await _stored(session, r, r.report_key), media_type="text/plain; charset=utf-8")
+
+
+@runs.get("/{run_id}/artifacts/{name}")
+async def run_artifact(run_id: str, name: str, session: AsyncSession = Depends(get_session)):
+    r = await _run(session, run_id)
+    if "/" in name or ".." in name or not name:
+        raise HTTPException(422, "A file name only.")
+    data = await _stored(session, r, f"artifacts/{r.id}/{name}")
+    media = "application/json" if name.endswith(".json") else "application/x-ndjson" if name.endswith(".jsonl") else "text/plain; charset=utf-8"
+    return Response(content=data, media_type=media)

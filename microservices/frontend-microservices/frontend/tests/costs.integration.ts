@@ -7,14 +7,16 @@
 import { createElement } from "react";
 import api from "@/app/services/api";
 import * as C from "@/lib/evalCosts";
+import * as DC from "@/lib/displayCurrency";
+import { usd as benchUsd } from "@/lib/evalBenchmarks";
 import BenchmarkCostCard from "@/components/benchmarking/CostCard";
 import { BenchmarkCostView } from "@/components/benchmarking/CostCard";
 import { BudgetsView } from "@/components/costs/BudgetsPanel";
 import { InsightsView } from "@/components/costs/InsightsPanel";
 import { ModelsView } from "@/components/costs/ModelsPanel";
 import { OverviewView } from "@/components/costs/OverviewPanel";
-import { RatesView } from "@/components/costs/RatesPanel";
-import { StatementDetailView, StatementsView } from "@/components/costs/ReconcilePanel";
+import { ComputeRatesView, RatesView } from "@/components/costs/RatesPanel";
+import { GapView, ImportSummary, StatementDetailView, StatementsView } from "@/components/costs/ReconcilePanel";
 import { LinesTable, AttributionView } from "@/components/costs/UsagePanel";
 
 const { renderToStaticMarkup } = require("react-dom/server") as { renderToStaticMarkup: (element: unknown) => string };
@@ -44,6 +46,27 @@ async function helpers(): Promise<void> {
   check("the CSV has a header, quotes what needs it, and leaves an unknown amount empty (never 0)", rows.length === 3 && rows[0].startsWith("incurred_at,run_id") && rows[1].includes('"ledger, ""quoted"""') && /,,unknown,no usage$/.test(rows[2]) && !rows[2].includes(",0,unknown"), rows);
 }
 
+/** One display currency for the whole studio: every page that shows money reads it, and a currency with no recorded rate is never converted at a guess. */
+async function display(): Promise<void> {
+  DC.resetDisplay();
+  check("by default money is shown in dollars everywhere", C.show(2.5) === "$2.50" && benchUsd(2.5) === "$2.50" && C.show(null) === "unknown" && benchUsd(undefined) === "unknown" && C.show(0) === "$0");
+  DC.setCurrency("PKR");
+  check("a chosen currency with NO recorded rate is not converted at a guess: dollars are shown", C.show(2.5) === "$2.50" && benchUsd(2.5) === "$2.50" && DC.getDisplay().currency === "USD");
+  DC.setRates({ PKR: 280 });
+  check("once a rate is recorded the same amounts read in rupees, on the costs pages and on the benchmark pages alike", C.show(2.5) === "700 PKR" && benchUsd(2.5) === "700 PKR" && C.show(0.0034) === "0.95 PKR" && C.show(0) === "0 PKR" && C.show(null) === "unknown");
+  check("an explicit currency still means that currency (a figure labelled USD stays in dollars)", C.money(2.5) === "$2.50" && C.money(2.5, "PKR") === "2.50 PKR");
+  DC.setCurrency("EUR");
+  check("a currency that has no rate falls back to dollars while another has one", C.show(2.5) === "$2.50");
+  let seen = 0;
+  const off = DC.subscribeDisplay(() => { seen += 1; });
+  DC.setCurrency("PKR");
+  DC.setRates({ PKR: 300 });
+  off();
+  check("everything that shows money is told when the choice or a rate changes, and the new rate is used at once", seen === 2 && C.show(1) === "300 PKR", [seen, C.show(1)]);
+  DC.resetDisplay();
+  check("resetting returns to dollars", C.show(1) === "$1.00");
+}
+
 async function writes(): Promise<void> {
   const ccy = process.env.COSTS_CCY || "XTS";
   const year = Number(process.env.COSTS_YEAR), dataset = process.env.COSTS_DATASET as string, bench = process.env.COSTS_BENCH as string, runA = process.env.COSTS_RUN_A as string;
@@ -51,6 +74,7 @@ async function writes(): Promise<void> {
   check("without signing in the dashboard is refused", anon.status === 401, anon.status);
   api.defaults.headers.common["Authorization"] = `Bearer ${process.env.COSTS_TOKEN}`;
   await helpers();
+  await display();
 
   // ── budgets ────────────────────────────────────────────────────────────────────────────────────────────────────────
   const b0 = await C.getBudget();
@@ -86,6 +110,19 @@ async function writes(): Promise<void> {
   const trXts = await C.getTrends({ from: `${year}-05-01`, to: `${year}-05-31`, group_by: "component", currency: ccy });
   const d10 = trXts.points.find((p) => p.start === `${year}-05-10`)!;
   check("trends in a second currency convert each day at the rate in force then (day 10 at 50, per recorded dollars)", near(d10.converted!.total, d10.total_usd * 50, 1e-4) && trXts.currency === ccy && trXts.unconverted_usd === 0, d10);
+
+  // ── what a machine costs per hour (self-hosted models) ───────────────────────────────────────────────────────────────────
+  const mname = `ITEST-GPU-${year}`;
+  check("a machine price without a source is refused", !!(await rejection(() => C.addComputeRate({ name: mname, resource: "gpu", usd_per_hour: 1.8, effective_from: `${year}-05-01`, source: "" }))));
+  const m1 = await C.addComputeRate({ name: mname, resource: "gpu", usd_per_hour: 1.8, effective_from: `${year}-05-01`, source: "integration test: price list" });
+  const m2 = await C.addComputeRate({ name: mname, resource: "gpu", usd_per_hour: 4.0, effective_from: `${year}-05-20`, source: "integration test: new price list" });
+  check("a machine price is recorded with its source, and a jump of more than half is flagged", m1.rate.usd_per_hour === 1.8 && m1.warning === null && !!m2.warning && m2.warning.includes("+122%"), [m1, m2]);
+  const machines = await C.getComputeRates();
+  const mine = machines.find((m) => m.name === mname)!;
+  check("the machine is listed with its price in force and its history", mine.current?.usd_per_hour === 4.0 && mine.history.map((h) => h.usd_per_hour).join() === "4,1.8");
+  const machineHtml = text(html(createElement(ComputeRatesView, { machines, onAdd: () => undefined })));
+  check("the page explains that machine time is time x price, that a machine without a price is unknown, and lists the machine", machineHtml.includes("time the machine is held times its price per hour") && machineHtml.includes("never free") && machineHtml.includes(mname) && machineHtml.includes("$4"), machineHtml.slice(0, 300));
+  check("with no machine recorded the page says so", text(html(createElement(ComputeRatesView, { machines: [], onAdd: () => undefined }))).includes("No machine price is recorded"));
 
   // ── the usage records ─────────────────────────────────────────────────────────────────────────────────────────────
   const lines = await C.listLines({ run_id: runA });
@@ -125,6 +162,22 @@ async function writes(): Promise<void> {
   check("the bill's detail explains the gap, compares the tokens and lists the biggest runs", detHtml.includes("not attributed") && detHtml.includes("Provider counted") && detHtml.includes("agree") && detHtml.includes("Every time it was reconciled"), detHtml.slice(0, 400));
   const fixed = await C.addStatement({ provider: "openai", period_start: `${year}-05-01`, period_end: `${year}-05-31`, billed_usd: 1.5, reference: "ITEST-3", source: "integration test: final figure", supersedes_id: wrong.statement.id });
   check("the final correction matches again", fixed.reconciliation.status === "matched" && near((await C.getCertainty(`${year}-05-01`, `${year}-05-31`)).by_provider.openai.confirmed_usd, 1.5));
+
+  // ── a provider usage export ───────────────────────────────────────────────────────────────────────────────────────────
+  const csv = `date,model,input_tokens,output_tokens,cost\n${year}-06-01,gpt-4.1-2025-04-14,1000,100,2.00\n${year}-06-02,gpt-4o-mini,10,1,0.40\nnot a date,gpt-4.1,1,1,9\n`;
+  const unreadable = await rejection(() => C.previewStatementFile("openai", "x.csv", "a,b\n1,2\n"));
+  check("an export with no date column is refused, and the reason names the columns found", !!unreadable && /date column/i.test(unreadable) && unreadable.includes("a, b"), unreadable);
+  const pv = await C.previewStatementFile("openai", "june.csv", csv);
+  check("an export is read: its period, the billed total, the tokens, the columns used, and the row it could not read (counted, not guessed)", pv.period_start === `${year}-06-01` && near(pv.billed_usd, 2.4) && pv.tokens!.input === 1010 && pv.columns.usd === "cost" && pv.skipped_count === 1 && pv.rows_used === 2, pv);
+  check("it says which days were billed with nothing recorded", pv.gap.days_billed_not_recorded.join() === `${year}-06-01,${year}-06-02` && pv.recorded_usd === 0, pv.gap);
+  const sumHtml = text(html(createElement(ImportSummary, { p: pv })));
+  check("the import summary shows the file, the rows read, the total, the columns, the warning for the skipped row and the days with nothing recorded", sumHtml.includes("june.csv") && sumHtml.includes("2 of 3 rows read") && sumHtml.includes("$2.40") && sumHtml.includes("cost") && sumHtml.includes("could not be read and were left out") && sumHtml.includes("billed, nothing recorded"), sumHtml.slice(0, 400));
+  const saved = await C.addStatement({ provider: "openai", period_start: pv.period_start, period_end: pv.period_end, billed_usd: pv.billed_usd!, source: "integration test: uploaded june.csv", usage_detail: { by_day: pv.by_day, by_model: pv.by_model, filename: "june.csv" } });
+  const sd = await C.getStatement(saved.statement.id);
+  check("the saved bill keeps its export, and its detail shows where the difference is", sd.live?.gap?.days_billed_not_recorded.length === 2 && !!sd.live?.gap?.largest_models.length, sd.live?.gap);
+  const detailHtml = text(html(createElement(StatementDetailView, { d: sd, live: sd.live, fmt: usd })));
+  check("the bill's detail page has the 'where the difference is' section with the day and model tables", detailHtml.includes("Where the difference is") && detailHtml.includes("Day with the biggest gaps") && detailHtml.includes("Model with the biggest gaps"), detailHtml.slice(0, 300));
+  check("a bill typed by hand has no such section, rather than an empty one", !text(html(createElement(StatementDetailView, { d: await C.getStatement(first.statement.id), live: null, fmt: usd }))).includes("Where the difference is"));
 
   // ── models, spending, findings ────────────────────────────────────────────────────────────────────────────────────
   const cmp = await C.getModelComparison({ dataset });

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { tx } from "@/lib/i18n/tx";
 import { formatter, getRates, type Rates } from "@/lib/evalCosts";
+import { setCurrency, setRates, useDisplayCurrency } from "@/lib/displayCurrency";
 import { useQueryState } from "@/lib/useQueryState";
 import BudgetsPanel from "./BudgetsPanel";
 import InsightsPanel from "./InsightsPanel";
@@ -18,26 +19,22 @@ export const COST_VIEWS: { id: string; label: string }[] = [
   { id: "overview", label: "Overview" }, { id: "models", label: "Cost vs quality" }, { id: "budgets", label: "Budgets" }, { id: "usage", label: "Usage records" },
   { id: "reconcile", label: "Reconciliation" }, { id: "insights", label: "Findings & advice" }, { id: "rates", label: "Exchange rates" },
 ];
-const STORE = "evalCostsCurrency";
-const remembered = () => { try { return window.localStorage.getItem(STORE) || ""; } catch { return ""; } };           // a per-viewer convenience only; the address is what counts
-const remember = (c: string) => { try { window.localStorage.setItem(STORE, c); } catch { /* private window: the choice simply is not remembered */ } };
-
 function Workspace() {
   const [viewParam, setView] = useQueryState("view", "overview");
   const view = COST_VIEWS.some((v) => v.id === viewParam) ? viewParam : "overview";
   const [curParam, setCurParam] = useQueryState("cur", "");
-  const [stored, setStored] = useState("");
-  const [rates, setRates] = useState<Rates | null>(null);
+  const display = useDisplayCurrency();                    // the one choice for the whole studio (header selector and this page are the same control)
+  const [rates, setRatesState] = useState<Rates | null>(null);
   const [refresh, setRefresh] = useState(0);
-  useEffect(() => { setStored(remembered()); }, []);
-  const loadRates = useCallback(() => getRates().then(setRates).catch(() => setRates({ base: "USD", currencies: {} })), []);
+  const loadRates = useCallback(() => getRates().then((r) => { setRatesState(r); setRates(Object.fromEntries(Object.entries(r.currencies).filter(([, v]) => v.current).map(([k, v]) => [k, v.current!.units_per_usd]))); }).catch(() => setRatesState({ base: "USD", currencies: {} })), []);
   useEffect(() => { loadRates(); }, [loadRates, refresh]);
+  useEffect(() => { if (curParam) setCurrency(curParam); }, [curParam]);          // a link that names a currency opens in it
   const known = Object.keys(rates?.currencies ?? {});
-  const currency = (curParam || stored || "USD").toUpperCase();
+  const currency = display.currency.toUpperCase();
   const rate = rates?.currencies[currency]?.current ?? null;
   const fmt = useMemo(() => formatter(currency, rate), [currency, rate]);
   const changed = useCallback(() => setRefresh((n) => n + 1), []);
-  const choose = (c: string) => { remember(c); setStored(c); setCurParam(c === "USD" ? "" : c); };
+  const choose = (c: string) => { setCurrency(c); setCurParam(c === "USD" ? "" : c); };
   return (
     <div className="space-y-4" data-testid="costs-workspace">
       <div className="flex flex-wrap items-start justify-between gap-3">

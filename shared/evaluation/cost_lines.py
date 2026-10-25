@@ -26,8 +26,10 @@ so ingesting a run twice, or a run that crashed and was ingested again, can neve
 from __future__ import annotations
 
 import hashlib
+from datetime import datetime
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
+from shared.evaluation import self_hosted
 from shared.evaluation.pricing import PriceTable
 
 COMPONENTS = ("candidate_llm", "agent_llm", "subagent_llm", "judge", "ocr", "embedding", "retry", "fallback", "unattributed", "self_hosted")
@@ -144,7 +146,7 @@ def _from_usage(usage: Dict[str, Any], *, run_id: str, result: Dict[str, Any], c
         f_items, _ = _items(foreign)
         for service, model, v in f_items:
             usd = _priced(table, model, v)
-            out.append(_line(run_id=run_id, case_id=case_id, repetition=rep, component="unattributed", model=model, service=service, attempt=attempt, input_units=int(v.get("input_tokens") or 0),
+            out.append(_line(run_id=run_id, case_id=case_id, repetition=rep, component="embedding" if is_embedding_model(model) else "unattributed", model=model, service=service, attempt=attempt, input_units=int(v.get("input_tokens") or 0),
                              output_units=int(v.get("output_tokens") or 0), cached_units=int(v.get("cached_tokens") or 0), usd=usd, pricing_version_id=pricing_version_id,
                              source=f"{v.get('calls', 0)} ledger row(s) seen during this execution that carry another thread id (a late row of an earlier execution, or a call with no thread such as a title); "
                                     f"token ledger x prices '{table.label}'" if usd is not None else f"ledger rows with another thread id; no price for {model}"))
@@ -176,7 +178,19 @@ def _judge_lines(result: Dict[str, Any], *, run_id: str) -> List[Dict[str, Any]]
     return out
 
 
-def lines_for_result(run_id: str, result: Dict[str, Any], *, table: PriceTable, candidate: Optional[str], mode: str, synthetic: bool, pricing_version_id: Any = None) -> List[Dict[str, Any]]:
+def _compute_lines(usage: Optional[Dict[str, Any]], *, run_id: str, result: Dict[str, Any], rates: Sequence[Dict[str, Any]], at: Any) -> List[Dict[str, Any]]:
+    """Machine time (a self-hosted model) as `self_hosted` lines, in seconds, priced from the recorded hourly rates; a machine with no rate is an unknown line."""
+    out = []
+    for c in self_hosted.lines_from_compute(usage, at=at or datetime.utcnow(), rates=rates):
+        ln = _line(run_id=run_id, case_id=result["case_id"], repetition=int(result.get("repetition", 1)), component="self_hosted", model=c["rate_name"] or None, service=f"compute:{c['resource']}:{c['index']}",
+                   attempt=0, unit_kind=c["unit_kind"], input_units=c["seconds"], usd=c["usd"], source=c["source"])
+        ln["provider"] = None
+        out.append(ln)
+    return out
+
+
+def lines_for_result(run_id: str, result: Dict[str, Any], *, table: PriceTable, candidate: Optional[str], mode: str, synthetic: bool, pricing_version_id: Any = None,
+                     compute_rates: Sequence[Dict[str, Any]] = (), at: Any = None) -> List[Dict[str, Any]]:
     """Every line one execution produced: its own calls, the calls of earlier failed attempts, anything unattributed, and the judge. No usage and no
     model call means no lines (nothing was spent, and that is known)."""
     out: List[Dict[str, Any]] = []
@@ -190,6 +204,7 @@ def lines_for_result(run_id: str, result: Dict[str, Any], *, table: PriceTable, 
                          source=f"the execution reports {result.get('llm_calls')} model call(s) but no usage was recorded"))
     for i, prior in enumerate(result.get("retry_usage") or [], start=1):
         out += _from_usage(prior, run_id=run_id, result=result, candidate=candidate, synthetic=synthetic, mode=mode, table=table, pricing_version_id=pricing_version_id, attempt=i, retry=True)
+    out += _compute_lines(usage, run_id=run_id, result=result, rates=compute_rates, at=at)
     out += _judge_lines(result, run_id=run_id)
     return out
 

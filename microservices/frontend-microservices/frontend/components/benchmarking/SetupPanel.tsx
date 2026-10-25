@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { tx } from "@/lib/i18n/tx";
-import { money, previewWithBudget, type BudgetStatus } from "@/lib/evalCosts";
+import { show, previewWithBudget, type BudgetStatus } from "@/lib/evalCosts";
 import {
   METRICS, PROVIDER_NAME, REPETITION_CHOICES, buildRequest, formProblems, getDataset, listDatasets, listModels, providerOf, startJob, tokens, usd,
   type BenchmarkForm, type CostEstimate, type DatasetDetail, type DatasetSummary, type Job, type Metric, type ModelEntry,
@@ -30,7 +30,7 @@ const METRIC_HELP: Record<Metric, string> = {
   custom: "The case's own criterion.",
 };
 
-const EMPTY: BenchmarkForm = { dataset: "", version: "", mode: "agent", models: [], repetitions: 3, judge: "", metrics: [], stages: [], temperature: "0", budget: "2", stopOnCritical: false, allowSameJudge: false };
+const EMPTY: BenchmarkForm = { dataset: "", version: "", mode: "agent", models: [], repetitions: 3, judge: "", metrics: [], stages: [], temperature: "0", budget: "2", stopOnCritical: false, allowSameJudge: false, skills: "default", maxLatencyMs: "", maxTokens: "", maxCostUsd: "", gate: false, gateMinPassPct: "90" };
 
 /** A section of the builder: a numbered header that says what was chosen, and a body that can be closed. */
 function Section({ n, title, summary, open, onToggle, children, testId }: { n: number; title: string; summary: ReactNode; open: boolean; onToggle: () => void; children: ReactNode; testId?: string }) {
@@ -240,7 +240,7 @@ export default function SetupPanel({ onStarted, initialDataset, initialProvider,
         <div className="space-y-1.5" data-testid="budget-impact">
           {(["day", "month"] as const).map((k) => { const p = preview.budget!.periods[k]; return p.limit_usd === null ? null : (
             <div key={k} className={`rounded-lg border px-2.5 py-2 text-[11px] ${p.status === "exceeded" ? "border-red-200 bg-red-50 text-red-700" : p.status === "warning" ? "border-amber-200 bg-amber-50 text-amber-800" : "border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-300"}`}>
-              <b>{k === "day" ? tx("Today's limit") : tx("This month's limit")}</b> {money(p.limit_usd)}: {money(p.spent_usd)} {tx("spent")}{p.reserved_usd > 0 ? ` + ${money(p.reserved_usd)} ${tx("reserved")}` : ""} → {money(p.projected_usd)}{p.used_pct === null ? "" : ` (${Math.round(p.used_pct)}%)`}
+              <b>{k === "day" ? tx("Today's limit") : tx("This month's limit")}</b> {show(p.limit_usd)}: {show(p.spent_usd)} {tx("spent")}{p.reserved_usd > 0 ? ` + ${show(p.reserved_usd)} ${tx("reserved")}` : ""} → {show(p.projected_usd)}{p.used_pct === null ? "" : ` (${Math.round(p.used_pct)}%)`}
               {p.status === "exceeded" ? ` · ${p.enforce ? tx("this run would be refused") : tx("passing it only warns")}` : p.status === "warning" ? ` · ${tx("close to the limit")}` : ""}
               <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-200/70"><div className={`h-full ${p.status === "exceeded" ? "bg-red-500" : p.status === "warning" ? "bg-amber-500" : "bg-blue-500"}`} style={{ width: `${Math.min(100, p.used_pct ?? 0)}%` }} /></div>
             </div>); })}
@@ -340,6 +340,15 @@ export default function SetupPanel({ onStarted, initialDataset, initialProvider,
               {(["agent", "direct"] as const).map((m) => <button key={m} type="button" role="radio" aria-checked={form.mode === m} onClick={() => set("mode", m)} className={seg(form.mode === m)}>{m === "agent" ? tx("Agent") : tx("Direct")}</button>)}
             </div>
             <p className="mt-1.5 text-[11px] text-slate-500">{form.mode === "agent" ? tx("The real Individual Insurance agent answers with its tools and skills, using each model.") : tx("The bare model is asked the same question with the same reference information, with no agent and no tools.")}</p>
+            {form.mode === "agent" && (
+              <div className="mt-2" data-testid="skills-choice">
+                <span className={labelCls}>{tx("Agent skills")}</span>
+                <div className="inline-flex rounded-lg border border-slate-200 p-0.5 dark:border-slate-700" role="radiogroup" aria-label={tx("Agent skills")}>
+                  {([["default", "As configured"], ["on", "On"], ["off", "Off"]] as const).map(([v, l]) => <button key={v} type="button" role="radio" aria-checked={(form.skills ?? "default") === v} onClick={() => set("skills", v)} className={seg((form.skills ?? "default") === v)}>{tx(l)}</button>)}
+                </div>
+                <p className="mt-1 text-[10px] text-slate-400">{tx("Skills are the agent's progressive instructions. Run once with them on and once off to see what they add.")}</p>
+              </div>
+            )}
           </div>
           <div>
             <span className={labelCls}>{tx("Repetitions")}</span>
@@ -353,7 +362,7 @@ export default function SetupPanel({ onStarted, initialDataset, initialProvider,
         </Section>
 
         <Section n={4} title={tx("Judging and limits")} testId="sec-judge" open={open.judge} onToggle={() => flip("judge")}
-          summary={<>{judgeSummary} · {tx("budget")} {form.budget.trim() === "" ? tx("none") : `$${form.budget}`}{form.stopOnCritical ? ` · ${tx("stops at a critical failure")}` : ""} <span className="text-slate-400">({tx("optional")})</span></>}>
+          summary={<>{judgeSummary} · {tx("budget")} {form.budget.trim() === "" ? tx("none") : `$${form.budget}`}{form.stopOnCritical ? ` · ${tx("stops at a critical failure")}` : ""}{form.gate ? ` · ${tx("gate")} ${form.gateMinPassPct || "90"}%` : ""}{form.skills === "on" || form.skills === "off" ? ` · ${tx("skills")} ${form.skills}` : ""} <span className="text-slate-400">({tx("optional")})</span></>}>
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
               <label className={labelCls} htmlFor="bm-judge">{tx("Judge model")}</label>
@@ -377,6 +386,16 @@ export default function SetupPanel({ onStarted, initialDataset, initialProvider,
               {METRICS.map((m) => <button key={m} type="button" disabled={!form.judge} title={tx(METRIC_HELP[m])} aria-pressed={form.metrics.includes(m)} onClick={() => toggle("metrics", m)} className={`${chip(form.metrics.includes(m))} disabled:opacity-40`}>{m.replace("_", " ")}</button>)}
             </div>
             {!form.judge && <p className="mt-1 text-[10px] text-slate-400">{tx("Choose a judge to pick which quality metrics are scored.")}</p>}
+          </div>
+          <div data-testid="limits-gate" className="grid gap-3 sm:grid-cols-3">
+            <div><label className={labelCls} htmlFor="bm-maxlat">{tx("Slowest allowed (ms)")}</label><input id="bm-maxlat" className={inputCls} inputMode="numeric" placeholder={tx("no limit")} value={form.maxLatencyMs ?? ""} onChange={(e) => set("maxLatencyMs", e.target.value)} /></div>
+            <div><label className={labelCls} htmlFor="bm-maxtok">{tx("Most tokens per execution")}</label><input id="bm-maxtok" className={inputCls} inputMode="numeric" placeholder={tx("no limit")} value={form.maxTokens ?? ""} onChange={(e) => set("maxTokens", e.target.value)} /></div>
+            <div><label className={labelCls} htmlFor="bm-maxcost">{tx("Most cost per execution (USD)")}</label><input id="bm-maxcost" className={inputCls} inputMode="decimal" placeholder={tx("no limit")} value={form.maxCostUsd ?? ""} onChange={(e) => set("maxCostUsd", e.target.value)} /></div>
+            <p className="text-[10px] text-slate-400 sm:col-span-3">{tx("An execution over a limit fails the performance layer (L6); it is not stopped midway.")}</p>
+            <div className="sm:col-span-3">
+              <label className="flex items-start gap-2 text-[11px] text-slate-600 dark:text-slate-300"><input type="checkbox" className="mt-0.5" checked={!!form.gate} onChange={(e) => set("gate", e.target.checked)} />{tx("Apply a quality gate: each model must reach a minimum pass rate (critical cases are held to a stricter standard)")}</label>
+              {form.gate && <div className="mt-2 max-w-[10rem]"><label className={labelCls} htmlFor="bm-gate">{tx("Minimum pass rate (%)")}</label><input id="bm-gate" className={inputCls} inputMode="decimal" value={form.gateMinPassPct ?? ""} onChange={(e) => set("gateMinPassPct", e.target.value)} /></div>}
+            </div>
           </div>
         </Section>
 

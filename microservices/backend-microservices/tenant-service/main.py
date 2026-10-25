@@ -92,7 +92,7 @@ from routers.medical_exam import router as medical_exam_router
 from routers.reinsurance import router as reinsurance_router
 from routers.claims import router as claims_router
 from routers.demo import router as demo_router
-from routers.rules import router as rules_router
+from routers.rules import router as rules_router, early_router as rules_early_router
 from routers.search import router as search_router
 from routers.commissions import router as commissions_router
 from routers.commission_disbursements import router as commission_disbursements_router
@@ -339,6 +339,7 @@ app.include_router(reinsurance_router)
 app.include_router(claims_router)
 app.include_router(demo_router)
 app.include_router(rules_router)
+app.include_router(rules_early_router)
 app.include_router(search_router)
 app.include_router(commissions_router)
 app.include_router(commission_disbursements_router)

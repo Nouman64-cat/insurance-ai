@@ -316,14 +316,71 @@ async def t_the_ledger_names_the_service_behind_each_call_and_the_lines_account_
     print(f"        services seen: {sorted(u['by_service'])}  foreign rows: {(u.get('foreign') or {}).get('rows', 0)}")
 
 
+async def t_the_runs_events_carry_everything_an_execution_spent() -> None:
+    """The platform stops a running job when its spending passes a daily or monthly limit, by adding up the `total_cost_usd` of its case events. That figure must hold the
+    model's calls, the judge and the calls of attempts that failed and were run again, or the stop would come late."""
+    bundle = eval_runner.bundle_from_source()
+    selected, _ = select_cases(bundle.cases, case_ids=["IND-LEAD-001"])
+    runner = eval_runner.Runner(bundle, args(retries=1))
+    spent = {"status": "attributed", "calls": 1, "input_tokens": 1_000_000, "output_tokens": 0, "cached_tokens": 0, "by_model": {"gpt-4o-mini": {"calls": 1, "input_tokens": 1_000_000, "output_tokens": 0, "cached_tokens": 0}}}
+    result = runner._make(selected[0], 1, "passed", cost_usd=0.01, judge_cost_usd=0.002, retry_usage=[spent])
+    assert abs(eval_runner.Runner._total_cost(result) - (0.01 + 0.002 + 0.15)) < 1e-9, eval_runner.Runner._total_cost(result)
+    assert eval_runner.Runner._total_cost(runner._make(selected[0], 1, "skipped")) == 0.0, "an execution that spent nothing adds nothing"
+    runner._record(result)
+    event = [json.loads(l) for l in (runner.out / "events.jsonl").read_text().splitlines() if l.strip()]
+    case_event = next(e for e in event if e["kind"] == "case")
+    assert abs(case_event["data"]["total_cost_usd"] - 0.162) < 1e-9 and case_event["data"]["judge_cost_usd"] == 0.002 and case_event["data"]["cost_usd"] == 0.01, case_event["data"]
+
+
+async def t_a_conversation_whose_budget_runs_out_between_turns_stops_there_keeping_what_it_spent() -> None:
+    """The budget is asked before every turn after the first. Here the guard says no before turn 2: the conversation ends after one turn, the result is blocked (budget_exceeded, never a
+    failure), nothing is judged, and what the first turn cost is kept with it. The same case without the guard runs every turn."""
+    bundle = eval_runner.bundle_from_source()
+    case_id = "IND-LEAD-002"
+    case = next(c for c in bundle.cases if c["case_id"] == case_id)
+    user_turns = len([m for m in case["input"]["messages"] if m.get("role") == "user"])
+    assert user_turns >= 2, "the case chosen for this test has more than one user turn"
+    full = await run([case_id], judge="mock/mock-judge")
+    done = only(full, case_id)
+    assert done.status in ("passed", "failed") and done.turns >= user_turns and "stopped" not in json.dumps(done.trace_summary), (done.status, done.turns)
+
+    selected, _ = select_cases(bundle.cases, case_ids=[case_id])
+    runner = eval_runner.Runner(bundle, args(judge="mock/mock-judge"))
+    asked: List[int] = []
+    runner._turn_guard = lambda turn: asked.append(turn) or ("budget_exceeded" if turn == 2 else None)
+    await runner.run(selected)
+    x = only(runner, case_id)
+    assert asked[:1] == [2], asked
+    assert x.status == "blocked" and x.reason == "budget_exceeded", (x.status, x.reason, x.error)
+    assert x.turns == 1, f"one turn was delivered before the stop, not {x.turns}"
+    assert x.usage and x.usage["status"] == "attributed" and x.usage["calls"] >= 1 and x.cost_known, x.usage          # what the finished turn cost is on the record
+    assert not x.metric_scores and not x.failed_assertions and not x.critical_failed, "half a conversation is not judged and is not a failure"
+    transcript = json.loads((runner.out / x.trace_artifact).read_text())
+    assert len(transcript["turns"]) == 1, "the stored transcript holds the turn that happened, no more"
+
+
+async def t_the_turn_guard_counts_money_already_spent_and_never_stops_a_scripted_model() -> None:
+    bundle = eval_runner.bundle_from_source()
+    real = eval_runner.Runner(bundle, args(model="openai/gpt-4o-mini", budget_usd=0.10))
+    assert real._turn_guard(2) is None, "nothing spent yet, a turn fits"
+    real.spent_usd = 0.10 - eval_runner.CHAT_TURN_ESTIMATE_USD * 2.5
+    assert real._turn_guard(2) is None, "the first turn's estimate and the second turn both fit"
+    assert real._turn_guard(3) == "budget_exceeded", "the two turns before it are counted, so the third does not fit"
+    assert eval_runner.Runner(bundle, args(model="openai/gpt-4o-mini", budget_usd=None))._turn_guard(9) is None, "no budget, no stop"
+    scripted = eval_runner.Runner(bundle, args(model="mock/mock-oracle", budget_usd=0.0))
+    scripted.spent_usd = 5.0
+    assert scripted._turn_guard(2) is None, "a scripted model costs nothing, so the budget cannot stop it"
+
+
 TESTS: List[Callable] = [t_a_conversation_is_driven_observed_and_judged_in_layers, t_without_a_judge_the_case_is_decided_without_it_and_says_so,
                          t_a_lazy_agent_fails_and_the_judge_sees_the_empty_answer, t_a_reckless_agent_is_stopped_by_the_permission_gate_and_otherwise_fails_critically,
                          t_skills_and_prompt_variants_change_what_the_agent_sends_to_the_model, t_another_users_conversation_is_refused_and_left_untouched, t_the_trace_is_closed_to_other_users, t_the_only_way_out_is_the_allowlisted_provider_through_the_proxy,
                          t_an_infrastructure_error_is_retried_but_a_verdict_is_not, t_what_a_failed_attempt_spent_is_kept_with_the_final_result,
-                         t_a_failed_execution_reports_what_it_spent_before_it_failed, t_the_ledger_names_the_service_behind_each_call_and_the_lines_account_for_it, t_every_repetition_gets_a_new_thread_and_a_clean_database,
+                         t_a_failed_execution_reports_what_it_spent_before_it_failed, t_the_runs_events_carry_everything_an_execution_spent, t_the_ledger_names_the_service_behind_each_call_and_the_lines_account_for_it, t_every_repetition_gets_a_new_thread_and_a_clean_database,
                          t_a_real_model_without_a_key_blocks_chat_cases_and_calls_nothing, t_a_chat_case_without_a_model_is_skipped_never_passed,
                          t_events_describe_the_run_in_order, t_the_judge_service_scores_every_metric_and_refuses_a_real_provider_without_a_key,
-                         t_a_prompt_version_that_does_not_exist_is_refused_before_anything_runs]
+                         t_a_prompt_version_that_does_not_exist_is_refused_before_anything_runs,
+                         t_a_conversation_whose_budget_runs_out_between_turns_stops_there_keeping_what_it_spent, t_the_turn_guard_counts_money_already_spent_and_never_stops_a_scripted_model]
 
 
 async def main(selected: Optional[List[str]] = None) -> int:

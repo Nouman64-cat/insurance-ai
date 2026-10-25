@@ -66,6 +66,20 @@ async function main(): Promise<number> {
   check("the request carries only what was chosen", request.kind === "benchmark_agent" && request.repeat === "1" && request.categories?.[0] === "lead-onboarding" && request.budget_usd === 1 && request.metrics === undefined && request.settings === undefined, request);
   check("a direct benchmark sends the temperature, an agent benchmark does not", buildRequest({ ...form, mode: "direct" }).settings?.[0] === "temperature=0");
 
+  // ── Phase 8: skills, per-execution limits and the quality gate ──
+  const plain = buildRequest(form);
+  check("by default nothing about skills, limits or the gate is sent (the platform's own defaults apply)", plain.skills === undefined && plain.max_latency_ms === undefined && plain.max_tokens === undefined && plain.max_cost_usd === undefined && plain.gate === undefined, plain);
+  const tuned = buildRequest({ ...form, skills: "off", maxLatencyMs: "8000", maxTokens: "4000", maxCostUsd: "0.05", gate: true, gateMinPassPct: "85" });
+  check("skills, the three limits and the gate are sent when chosen, the pass rate as a fraction", tuned.skills === "off" && tuned.max_latency_ms === 8000 && tuned.max_tokens === 4000 && tuned.max_cost_usd === 0.05 && tuned.gate === true && tuned.gate_min_pass_rate === 0.85, tuned);
+  check("skills belong to the agent: a direct benchmark never sends them", buildRequest({ ...form, mode: "direct", skills: "on" }).skills === undefined);
+  check("the gate's pass rate is left out when the gate is off, and 'as configured' sends no skills", buildRequest({ ...form, gate: false, gateMinPassPct: "70", skills: "default" }).gate_min_pass_rate === undefined && buildRequest({ ...form, skills: "default" }).skills === undefined);
+  check("a limit that is not a whole number, a negative cost and a pass rate over 100 are problems the page shows", formProblems({ ...form, maxLatencyMs: "1.5" }).length === 1 && formProblems({ ...form, maxTokens: "abc" }).length === 1 && formProblems({ ...form, maxCostUsd: "-1" }).length === 1
+    && formProblems({ ...form, gate: true, gateMinPassPct: "120" }).length === 1 && formProblems({ ...form, maxLatencyMs: "", maxTokens: "", maxCostUsd: "", gate: false }).length === 0);
+  const tunedPreview = await previewJob(buildRequest({ ...form, skills: "off", maxLatencyMs: "8000", maxTokens: "4000", maxCostUsd: "0.05", gate: true, gateMinPassPct: "85" }));
+  check("the backend accepts the request the form builds, with the limits and the gate", tunedPreview.cost !== undefined && tunedPreview.executions !== null, tunedPreview);
+  const badLimit = await rejects(() => previewJob({ ...buildRequest(form), max_latency_ms: 0 }));
+  check("the backend refuses a limit of zero", badLimit !== null, badLimit);
+
   // ── the cost preview ──
   const preview = await previewJob(request);
   const cost = preview.cost;
@@ -111,6 +125,14 @@ async function main(): Promise<number> {
   const runs = await runsOfJob(jobA.id);
   const benchmarkId = runs.find((r) => r.group_id)?.group_id ?? null;
   check("the job's runs are found, one per model, sharing the benchmark id", runs.length === 2 && !!benchmarkId && runs.every((r) => r.group_id === benchmarkId && r.state === "complete"), runs);
+  // a real (scripted) job started with skills off, the three limits and the gate: the runner takes every one and records them on each model's run
+  const tunedJob = await startJob(buildRequest({ ...form, skills: "off", maxLatencyMs: "60000", maxTokens: "100000", maxCostUsd: "1", gate: true, gateMinPassPct: "50" }));
+  const tunedDone = await until(async () => { const j = await getJob(tunedJob.id); return ["succeeded", "failed", "cancelled", "lost"].includes(j.state) ? j : null; }, 300);
+  const tunedRuns = tunedDone ? await runsOfJob(tunedJob.id) : [];
+  const tunedCfg = tunedRuns.length ? (await api.get<{ config: Record<string, any>; gate: { passed?: boolean; min_pass_rate?: number } | null }>(`/eval/runs/${tunedRuns[0].run_id}`)).data : null;
+  check("a job started with skills off, limits and a gate runs to the end", tunedDone?.state === "succeeded" && tunedRuns.length === 2, tunedDone?.state);
+  check("each model's run records skills off, the three limits and the gate with its minimum", !!tunedCfg && tunedCfg.config.skills_enabled === false && tunedCfg.config.limits?.max_latency_ms === 60000 && tunedCfg.config.limits?.max_tokens === 100000
+    && tunedCfg.config.limits?.max_cost_usd === 1 && tunedCfg.config.gate?.min_pass_rate === 0.5, tunedCfg?.config);
   if (!benchmarkId) return 1;
 
   // ── results ──

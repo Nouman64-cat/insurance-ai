@@ -12,7 +12,7 @@ export interface StudioGraph { as_of: string; nodes: StudioNode[]; edges: Studio
 export interface ObservedItem { name: string; executions: number; ran: number; passed: number; failed: number; scripted_executions: number; pass_rate: number | null; tools: string[]; specialists: string[]; models: string[] }
 export interface Observed {
   agent: { executions: number; ran: number; passed: number; failed: number; blocked: number; infrastructure_errors: number; scripted_executions: number; pass_rate: number | null };
-  specialists: ObservedItem[]; tools: ObservedItem[]; note: string;
+  specialists: ObservedItem[]; skills: ObservedItem[]; tools: ObservedItem[]; note: string;
 }
 
 export interface SearchItem { id: string; title: string; sub: string; dataset?: string; provider?: string; type?: string; when?: string }
@@ -108,7 +108,7 @@ export const HEALTH_COLOR: Record<Health, { dot: string; ring: string; text: str
   unknown: { dot: "#94a3b8", ring: "#e2e8f0", text: "text-slate-500 dark:text-slate-400", label: "not enough evidence" },
 };
 export const KIND_ICON: Record<string, string> = {
-  rules: "◇", dataset: "▤", harness: "⚙", drift: "≋", agent: "◉", specialists: "◎", tools: "✦", provider: "☁", deepeval: "✓", results: "▦", costs: "$",
+  rules: "◇", lake: "⛁", dataset: "▤", harness: "⚙", drift: "≋", agent: "◉", specialists: "◎", skills: "✧", tools: "✦", provider: "☁", deepeval: "✓", results: "▦", costs: "$",
 };
 
 /** The nodes and links connected to a node (one step each way): what lights up when it is hovered or selected. */
@@ -139,7 +139,7 @@ export interface ResultRow { result_id: string; run_id: string; model: string | 
   reason: string | null; critical_failed: boolean; latency_ms: number | null; input_tokens: number | null; output_tokens: number | null; cost_usd: number | null; cost_known: boolean; judge_cost_usd: number | null;
   has_trace: boolean; at: string | null; specialist: string | null; tools: string[] }
 export interface ResultsPage { total: number; by_status: Record<string, number>; models: string[]; datasets: string[]; results: ResultRow[] }
-export const listExecutions = async (p: { status?: string; model?: string; dataset?: string; case?: string; run_id?: string; include_synthetic?: boolean; limit?: number; offset?: number } = {}) =>
+export const listExecutions = async (p: { status?: string; model?: string; dataset?: string; case?: string; run_id?: string; include_synthetic?: boolean; failed_layer?: string; specialist?: string; tool?: string; days?: number; limit?: number; offset?: number } = {}) =>
   (await api.get<ResultsPage>("/eval/studio/results", { params: Object.fromEntries(Object.entries(p).filter(([, v]) => v !== undefined && v !== "" && v !== false)) })).data;
 
 /** The steps of a stored trace in the order they happened, for the replay: what the user said, what the agent answered, which tools it called and what came back. Per-step timings are not recorded,
@@ -178,11 +178,13 @@ export function traceSteps(r: { trace: Record<string, unknown> | null; trace_sum
 /** What each kind of node IS, in plain words. These describe the architecture, not its state: every number and colour on the map still comes from the platform's records. */
 export const KIND_HELP: Record<string, string> = {
   rules: "The business rules, plans, calculations, workflows and form templates the product runs on. When one changes, the Golden cases that depend on it may need updating.",
+  lake: "The data lake (MinIO). It holds every dataset layer (bronze, silver, gold), every published version and each run's artifacts, and checks they still match their recorded fingerprints.",
   dataset: "A Golden dataset: the approved test cases, with the outcome each should produce. Every evaluation is measured against one published version of it.",
   harness: "The evaluation harness. It runs the cases against the system in isolation, with scripted or real models, and records every result.",
   drift: "The change monitor. It notices when a rule, plan or template changes and queues what a person must review before any Golden case is touched.",
   agent: "The Individual Insurance chat agent: the system being tested.",
   specialists: "Specialist sub-agents the agent hands work to. Only the ones seen in recorded runs are shown.",
+  skills: "The agent's skills: instructions it loads for a kind of task (lead capture, underwriting, payments). Only the ones seen in recorded runs are shown; a run can switch them on or off to see what they add.",
   tools: "The tools the agent called while it was tested. Only the ones seen in recorded runs are shown.",
   provider: "A model provider (GPT, Gemini or Claude) whose models answer in the tests. Scripted stand-ins test the machinery only and say nothing about quality.",
   deepeval: "The judge. DeepEval scores answers on correctness, faithfulness, relevance, safety and more, where a fixed rule cannot decide.",
@@ -228,3 +230,48 @@ export function sameGraph(a: StudioGraph | null, b: StudioGraph | null): boolean
   if (!a || !b) return a === b;
   return JSON.stringify([a.nodes, a.edges, a.running, a.health]) === JSON.stringify([b.nodes, b.edges, b.running, b.health]);
 }
+
+// ── analytics: what the executions in a window say ─────────────────────────────────────────────────────────────────────────────────────────
+
+export const LAYER_IDS = ["L1", "L2", "L3", "L4", "L5", "L6"] as const;
+export interface LayerStat { applicable: number; passed: number; failed: number; pass_rate: number | null }
+export interface LatencyStat { n: number; mean: number | null; p50: number | null; p95: number | null; max: number | null }
+export interface Analytics {
+  window_days: number; include_synthetic: boolean; dataset: string | null; model: string | null; models: string[]; datasets: string[]; note: string;
+  outcomes: { total: number; by_status: Record<string, number>; pass_rate: number | null; critical_failures: number; by_model: Record<string, Record<string, number>> };
+  coverage: Record<string, { cases_run: number; cases_total: number | null; share: number | null }>;
+  layers: { layers: string[]; names: Record<string, string>; by_model: Record<string, Record<string, LayerStat>> };
+  routing: { overall: { l3_applied: number; l3_passed: number; accuracy: number | null };
+    specialists: Record<string, { executions: number; l3_applied: number; l3_passed: number; l3_failed: number; accuracy: number | null }>;
+    tools: Record<string, { executions: number; l3_applied: number; l3_passed: number; l3_failed: number; accuracy: number | null }> } & Record<string, unknown>;
+  latency: Record<string, LatencyStat>;
+  reliability: Record<string, { cases: number; repeated_cases: number; decision_consistency: number | null; flaky_cases: string[]; consistently_wrong: number; all_runs_success_rate: number | null }>;
+  drift: { total: number; kinds: string[]; weeks: { start: string; total: number; by_kind: Record<string, number> }[] } & Record<string, unknown>;
+}
+export const getAnalytics = async (p: { dataset?: string; model?: string; days?: number; include_synthetic?: boolean } = {}) =>
+  (await api.get<Analytics>("/eval/studio/analytics", { params: Object.fromEntries(Object.entries(p).filter(([, v]) => v !== undefined && v !== "" && v !== false)) })).data;
+
+// ── runs: one run's summary, and two runs side by side ─────────────────────────────────────────────────────────────────────────────────────
+
+export interface RunListItem { run_id: string; kind: string; dataset: string | null; version: string | null; model: string | null; synthetic: boolean; state: string; repetitions: number; executions: number;
+  passed: number; failed: number; pass_rate: number | null; known_cost_usd: number; started_at: string | null }
+export const listRuns = async (p: { limit?: number } = {}) => (await api.get<{ total: number; runs: RunListItem[] }>("/eval/runs", { params: { limit: p.limit ?? 100, state: "complete" } })).data.runs;
+
+export interface GateCheck { name: string; value: number | string | null; threshold: number | string | null; ok: boolean; detail: string }
+export interface RunDetail extends RunListItem {
+  config: Record<string, unknown>; stop_reason: string | null;
+  reliability: { ran: number; cases: number; ci_low: number | null; ci_high: number | null; pass_rate: number | null; flaky_cases: string[]; consistently_wrong_cases?: string[]; repeated_cases: number; classes: Record<string, number> } | null;
+  gate: { passed: boolean; checks: GateCheck[] } | null;
+  judge_calibration: { status?: string; agreement?: number | null } | null;
+}
+export const getRunDetail = async (runId: string) => (await api.get<RunDetail>(`/eval/runs/${encodeURIComponent(runId)}`)).data;
+
+export interface CaseChange { case: string; a: string; b: string; a_pass_fraction: number | null; b_pass_fraction: number | null }
+export interface RunTotals { executions: number; ran: number; passed: number; failed: number; pass_rate: number | null; cost_usd: number | null; unknown_cost_executions: number; latency_p50_ms: number | null; latency_p95_ms: number | null }
+export interface RunComparison {
+  a_run: { run_id: string; model: string | null; dataset: string | null; version: string | null }; b_run: { run_id: string; model: string | null; dataset: string | null; version: string | null };
+  a: RunTotals; b: RunTotals; cases_compared: number; unchanged: number; newly_failing: CaseChange[]; newly_passing: CaseChange[]; changed: CaseChange[]; only_in_a: string[]; only_in_b: string[];
+  delta: { pass_rate: number | null; cost_usd: number | null; latency_p50_ms: number | null; latency_p95_ms: number | null }; notes: string[];
+}
+export const compareRuns = async (a: string, b: string) => (await api.get<RunComparison>("/eval/runs/compare", { params: { a, b } })).data;
+export const getRunReport = async (runId: string) => (await api.get<string>(`/eval/runs/${encodeURIComponent(runId)}/report`, { responseType: "text", transformResponse: (d) => d })).data;

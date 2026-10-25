@@ -93,7 +93,7 @@ async def main() -> int:
             await s.flush()
             soft = await svc.enforce(s, est(10.5))
             check("with enforcement off, passing the limit only warns", soft["allowed"] and soft["periods"]["day"]["status"] == "exceeded", soft["periods"]["day"])
-            await svc.set_limit(s, "day", limit_usd=total, warn_at_pct=80, enforce_limit=True, reason="used up", actor_id=uid)
+            await svc.set_limit(s, "day", limit_usd=max(0.0, total - 0.001), warn_at_pct=80, enforce_limit=True, reason="used up", actor_id=uid)          # a hair under what is committed: `total` is rounded to 6 places, the real sum is not
             await s.flush()
             try:
                 await svc.enforce(s, {"cost": {"error": "no price"}})

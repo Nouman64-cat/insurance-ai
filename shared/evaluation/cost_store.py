@@ -69,11 +69,13 @@ def run_facts(run) -> Dict[str, Any]:
 async def build_lines(session, run) -> List[Dict[str, Any]]:
     """The cost lines of a stored run, from its stored results. Used for runs ingested before cost lines existed; it cannot know what the original run
     did not record (the ledger's service names, the usage of failed attempts), and the lines say so in their source."""
+    from shared.evaluation.runs import _compute_rates
     table = await price_table_of(session, run)
     facts = run_facts(run)
+    rates = await _compute_rates(session)
     lines: List[Dict[str, Any]] = []
     for r in await stored_results(session, run):
-        lines += cost_lines.lines_for_result(run.run_id, r, table=table, candidate=facts["candidate"], mode=facts["mode"], synthetic=facts["synthetic"], pricing_version_id=run.pricing_version_id)
+        lines += cost_lines.lines_for_result(run.run_id, r, table=table, candidate=facts["candidate"], mode=facts["mode"], synthetic=facts["synthetic"], pricing_version_id=run.pricing_version_id, compute_rates=rates, at=run.started_at)
     return lines
 
 

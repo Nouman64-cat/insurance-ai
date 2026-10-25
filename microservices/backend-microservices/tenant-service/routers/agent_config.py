@@ -11,6 +11,8 @@ from database import get_session
 from routers.auth import require_roles
 from shared.models.core import PlatformAgentConfig
 
+from services.internal_auth import check_internal_secret
+
 router = APIRouter(tags=["Platform — AI Agents"])
 superadmin = require_roles("SuperAdmin")
 INTERNAL_API_SECRET = os.getenv("INTERNAL_API_SECRET", "").strip()
@@ -55,6 +57,5 @@ async def update_agent_config(body: AgentConfigUpdate, user=Depends(superadmin),
 
 @router.get("/internal/agent-config", response_model=AgentConfigRead, include_in_schema=False)
 async def internal_agent_config(x_internal_secret: str = Header(default=""), session: AsyncSession = Depends(get_session)):
-    if INTERNAL_API_SECRET and x_internal_secret != INTERNAL_API_SECRET:
-        raise HTTPException(401, "bad internal secret")
+    check_internal_secret(INTERNAL_API_SECRET, x_internal_secret)
     return view(await session.get(PlatformAgentConfig, "default"))

@@ -35,7 +35,13 @@ def render(title: str, version: int, content: Dict[str, Any]) -> str:
 def _embed(body: str) -> List[float]:
     from google import genai
     client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-    return client.models.embed_content(model="models/gemini-embedding-001", contents=body).embeddings[0].values
+    values = client.models.embed_content(model="models/gemini-embedding-001", contents=body).embeddings[0].values
+    try:
+        from services import usage_meter
+        usage_meter.record_embedding(usage_meter.SERVICE_KNOWLEDGE_BASE_EMBEDDINGS, "gemini-embedding-001", body)          # the spend shows in Token Economy and in the cost split
+    except Exception:                                                                                                   # noqa: BLE001 - metering never fails an embedding
+        pass
+    return values
 
 
 async def sync_template(session: AsyncSession, template_key: str) -> Dict[str, Any]:

@@ -60,6 +60,7 @@ class Conversation:
     turns: List[TurnResult] = field(default_factory=list)
     trace: Dict[str, Any] = field(default_factory=dict)
     final_interrupt: Optional[Dict[str, Any]] = None
+    stopped: Optional[str] = None            # why the conversation was stopped before its last turn (e.g. budget_exceeded); the turns already held are kept
 
 
 def summarise_events(events: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -99,12 +100,18 @@ async def _consume(client, method: str, url: str, headers: Dict[str, str], body:
 
 async def run_conversation(client, *, chat_url: str, headers: Dict[str, str], thread_id: str, messages: List[str], confirmations: str = "auto_approve",
                            on_turn: Optional[Callable[[int], Any]] = None, platform: str = "web", locale: str = "en", timeout: float = 120.0,
-                           locale_for_turn: Optional[str] = None) -> Conversation:
+                           locale_for_turn: Optional[str] = None, stop_before_turn: Optional[Callable[[int], Optional[str]]] = None) -> Conversation:
     """Deliver `messages` in order and return what happened. `on_turn(i)` is awaited before turn i is delivered (the runner uses it to
-    tell the scripted model which turn it is on, and to snapshot the database)."""
+    tell the scripted model which turn it is on, and to snapshot the database). `stop_before_turn(i)` is asked before every turn after the first:
+    a reason ends the conversation there (the turns already delivered stay in the result and are paid for)."""
     convo = Conversation(thread_id=thread_id)
     paused: Optional[Dict[str, Any]] = None
     for i, text in enumerate(messages, start=1):
+        if i > 1 and stop_before_turn is not None:
+            reason = stop_before_turn(i)
+            if reason:
+                convo.stopped = reason
+                break
         if on_turn:
             result = on_turn(i)
             if hasattr(result, "__await__"):

@@ -15,7 +15,7 @@ import database
 from services import eval_analytics as an
 from services import eval_rates as rates
 from shared.models.core import User
-from shared.models.evaluation import EvalCostLine
+from shared.models.evaluation import EvalComputeRate, EvalCostLine
 
 FAILS = 0
 
@@ -74,6 +74,21 @@ async def main() -> int:
             mo = await an.trends(s, start=date(2001, 3, 1), end=date(2001, 3, 31), bucket="month", currency="XTS")
             check("a month bucket converts line by line, not at one rate", mo["points"][0]["converted"]["total"] == 100.0 + 208.0 + 453.0)
             check("asking for USD changes nothing", "converted_total" not in await an.trends(s, start=date(2001, 3, 1), end=date(2001, 3, 31), currency="USD"))
+
+            # ── what a machine costs per hour, for a self-hosted model ──────────────────────────────────────────────────────────
+            cadd = lambda **k: rates.add_compute_rate(s, actor_id=uid, **{"name": "TEST-GPU-A10G", "resource": "gpu", "usd_per_hour": 1.2, "effective_from": date(2001, 3, 1), "source": "test: price list", **k})
+            check("a machine must be named, sourced, gpu or cpu, with a sensible price, from a day that has happened", await refused(cadd(name=" ")) and await refused(cadd(source=" ")) and await refused(cadd(resource="tpu")) and await refused(cadd(usd_per_hour=-1))
+                  and await refused(cadd(usd_per_hour=1e9)) and await refused(cadd(effective_from=date(2999, 1, 1))))
+            c1 = await cadd()
+            check("a machine's hourly rate is recorded with where it came from, and no warning for the first", c1["rate"]["usd_per_hour"] == 1.2 and c1["rate"]["source"] == "test: price list" and c1["warning"] is None, c1)
+            c2 = await cadd(usd_per_hour=3.0, effective_from=date(2001, 3, 15))
+            check("a rate that is more than half different from the last is recorded with a warning to check it", c2["warning"] and "+150%" in c2["warning"], c2)
+            await cadd(resource="cpu", usd_per_hour=0.1)
+            ov2 = await rates.compute_overview(s)
+            gpu = next(m for m in ov2["machines"] if m["name"] == "TEST-GPU-A10G" and m["resource"] == "gpu")
+            check("each machine and resource lists its rate in force today and its history, newest first", gpu["current"]["usd_per_hour"] == 3.0 and [h["usd_per_hour"] for h in gpu["history"]] == [3.0, 1.2] and any(m["name"] == "TEST-GPU-A10G" and m["resource"] == "cpu" for m in ov2["machines"]))
+            allr = await rates.compute_rates(s)
+            check("the recorded rates are available to the costing code in its own terms", any(r["name"] == "TEST-GPU-A10G" and r["resource"] == "gpu" and r["usd_per_hour"] == 3.0 for r in allr))
         finally:
             await s.rollback()
     print("FAILED" if FAILS else "all passed")

@@ -10,7 +10,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from shared.evaluation import currency as cur
-from shared.models.evaluation import EvalExchangeRate
+from shared.models.evaluation import EvalComputeRate, EvalExchangeRate
 
 
 def _out(r: EvalExchangeRate) -> Dict[str, Any]:
@@ -67,3 +67,56 @@ async def add_rate(session: AsyncSession, *, actor_id: UUID, currency: str, unit
     session.add(row)
     await session.flush()
     return {"rate": _out(row), "previous": _out(previous["row"]) if previous else None, "warning": cur.change_warning(previous, units_per_usd) if previous else None}
+
+
+# ── what a machine costs per hour (for self-hosted models) ─────────────────────────────────────────────────────────────
+
+def _compute_out(r: EvalComputeRate) -> Dict[str, Any]:
+    return {"id": str(r.id), "name": r.name, "resource": r.resource, "usd_per_hour": r.usd_per_hour, "effective_from": r.effective_from.date().isoformat(), "source": r.source,
+            "recorded_by": str(r.recorded_by), "created_at": r.created_at}
+
+
+async def compute_rates(session: AsyncSession) -> List[Dict[str, Any]]:
+    """Every recorded hourly machine rate, as the pure costing code reads them."""
+    return [{"name": r.name, "resource": r.resource, "usd_per_hour": r.usd_per_hour, "effective_from": r.effective_from, "source": r.source, "created_at": r.created_at}
+            for r in (await session.exec(select(EvalComputeRate))).all()]
+
+
+async def compute_overview(session: AsyncSession) -> Dict[str, Any]:
+    """Each machine and resource with its rate in force today and its history, newest first."""
+    from shared.evaluation import self_hosted
+    rows = (await session.exec(select(EvalComputeRate).order_by(EvalComputeRate.effective_from.desc(), EvalComputeRate.created_at.desc()))).all()
+    plain = await compute_rates(session)
+    seen, out = set(), []
+    for r in rows:
+        key = (r.name, r.resource)
+        if key in seen:
+            continue
+        seen.add(key)
+        now = self_hosted.rate_in_force(plain, r.name, r.resource, datetime.utcnow())
+        out.append({"name": r.name, "resource": r.resource, "current": None if now is None else {"usd_per_hour": now["usd_per_hour"], "effective_from": now["effective_from"].date().isoformat(), "source": now["source"]},
+                    "history": [_compute_out(x) for x in rows if (x.name, x.resource) == key]})
+    return {"machines": out}
+
+
+async def add_compute_rate(session: AsyncSession, *, actor_id: UUID, name: str, resource: str, usd_per_hour: float, effective_from: date, source: str) -> Dict[str, Any]:
+    if resource not in ("gpu", "cpu"):
+        raise HTTPException(422, "The resource is gpu or cpu.")
+    if not name.strip():
+        raise HTTPException(422, "Name the machine (for example: A10G on-demand), so an execution can say which one it used.")
+    if usd_per_hour < 0 or usd_per_hour > 100_000:
+        raise HTTPException(422, "The hourly rate is a number of US dollars per hour.")
+    if effective_from > datetime.utcnow().date():
+        raise HTTPException(422, "A rate cannot take effect on a day that has not happened yet.")
+    if not source.strip():
+        raise HTTPException(422, "Say where the price came from (a price list, an invoice, an internal cost sheet).")
+    previous = [r for r in await compute_rates(session) if r["name"] == name.strip() and r["resource"] == resource]
+    row = EvalComputeRate(name=name.strip(), resource=resource, usd_per_hour=usd_per_hour, effective_from=datetime.combine(effective_from, time.min), source=source.strip(), recorded_by=actor_id)
+    session.add(row)
+    await session.flush()
+    warn = None
+    if previous:
+        last = max(previous, key=lambda r: (r["effective_from"], r["created_at"]))
+        if last["usd_per_hour"] > 0 and abs(usd_per_hour - last["usd_per_hour"]) / last["usd_per_hour"] > 0.5:
+            warn = f"This differs by {(usd_per_hour - last['usd_per_hour']) / last['usd_per_hour'] * 100:+.0f}% from the rate it follows (${last['usd_per_hour']:g}/h). Check it for a typing mistake; it was recorded as typed."
+    return {"rate": _compute_out(row), "warning": warn}

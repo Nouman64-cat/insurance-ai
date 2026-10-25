@@ -3,6 +3,7 @@
 //
 // No React in here, and no direct use of window except in the two functions that need the browser (download, stream).
 import api from "@/app/services/api";
+import { getDisplay, formatIn } from "@/lib/displayCurrency";
 
 // ── Types ────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -26,6 +27,7 @@ export interface JobRequest {
   dataset: string; version: string; kind: "benchmark_agent" | "benchmark_direct"; models: string[]; repeat: string; judge?: string; metrics?: Metric[];
   categories?: string[]; case_ids?: string[]; settings?: string[]; budget_usd?: number; concurrency?: number; stop_on_critical?: boolean; retries?: number;
   allow_same_judge?: boolean; suite?: "technical" | "business";
+  skills?: "on" | "off"; max_latency_ms?: number; max_tokens?: number; max_cost_usd?: number; gate?: boolean; gate_min_pass_rate?: number;
 }
 
 export interface ModelCost {
@@ -152,6 +154,8 @@ export const rerunJob = (id: string) => refusing(async () => (await api.post<Job
 export interface BenchmarkForm {
   dataset: string; version: string; mode: BenchmarkMode; models: string[]; repetitions: number; judge: string; metrics: Metric[]; stages: string[];
   temperature: string; budget: string; stopOnCritical: boolean; allowSameJudge: boolean;
+  /** Agent mode: the agent's progressive skills on or off ("default" leaves them as the platform has them). Limits a single execution may not exceed, and the quality gate: all optional. */
+  skills?: "default" | "on" | "off"; maxLatencyMs?: string; maxTokens?: string; maxCostUsd?: string; gate?: boolean; gateMinPassPct?: string;
 }
 export function buildRequest(f: BenchmarkForm): JobRequest {
   const req: JobRequest = { dataset: f.dataset, version: f.version, kind: f.mode === "direct" ? "benchmark_direct" : "benchmark_agent", models: f.models, repeat: String(f.repetitions) };
@@ -162,6 +166,11 @@ export function buildRequest(f: BenchmarkForm): JobRequest {
   if (f.budget.trim() !== "" && Number(f.budget) >= 0) req.budget_usd = Number(f.budget);
   if (f.stopOnCritical) req.stop_on_critical = true;
   if (f.allowSameJudge) req.allow_same_judge = true;
+  if (f.mode === "agent" && (f.skills === "on" || f.skills === "off")) req.skills = f.skills;
+  if ((f.maxLatencyMs ?? "").trim() !== "") req.max_latency_ms = Math.round(Number(f.maxLatencyMs));
+  if ((f.maxTokens ?? "").trim() !== "") req.max_tokens = Math.round(Number(f.maxTokens));
+  if ((f.maxCostUsd ?? "").trim() !== "") req.max_cost_usd = Number(f.maxCostUsd);
+  if (f.gate) { req.gate = true; if ((f.gateMinPassPct ?? "").trim() !== "") req.gate_min_pass_rate = Number(f.gateMinPassPct) / 100; }
   return req;
 }
 
@@ -175,6 +184,11 @@ export function formProblems(f: BenchmarkForm): string[] {
   if (f.judge && f.models.includes(f.judge) && !f.allowSameJudge) out.push("The judge is also one of the models compared. Choose another judge, or allow it on purpose.");
   if (f.budget.trim() !== "" && !(Number(f.budget) >= 0)) out.push("The budget must be a number of dollars.");
   if (f.mode === "direct" && f.temperature.trim() !== "" && Number.isNaN(Number(f.temperature))) out.push("Temperature must be a number.");
+  const whole = (v: string | undefined) => (v ?? "").trim() === "" || (Number.isInteger(Number(v)) && Number(v) >= 1);
+  if (!whole(f.maxLatencyMs)) out.push("The latency limit must be a whole number of milliseconds.");
+  if (!whole(f.maxTokens)) out.push("The token limit must be a whole number.");
+  if ((f.maxCostUsd ?? "").trim() !== "" && !(Number(f.maxCostUsd) >= 0)) out.push("The cost limit per execution must be a number of dollars.");
+  if (f.gate && (f.gateMinPassPct ?? "").trim() !== "" && !(Number(f.gateMinPassPct) >= 0 && Number(f.gateMinPassPct) <= 100)) out.push("The gate's minimum pass rate must be between 0 and 100.");
   return out;
 }
 
@@ -268,7 +282,7 @@ export async function streamJob(jobId: string, h: StreamHandlers, signal: AbortS
 
 export const pct = (x: number | null | undefined, digits = 0) => (x === null || x === undefined ? "—" : `${(x * 100).toFixed(digits)}%`);
 export const ms = (x: number | null | undefined) => (x === null || x === undefined ? "—" : x >= 1000 ? `${(x / 1000).toFixed(1)} s` : `${Math.round(x)} ms`);
-export const usd = (x: number | null | undefined) => (x === null || x === undefined ? "unknown" : x === 0 ? "$0" : x < 0.01 ? `$${x.toFixed(4)}` : `$${x.toFixed(2)}`);
+export const usd = (x: number | null | undefined) => { if (x === null || x === undefined) return "unknown"; const d = getDisplay(); return d.rate !== null ? formatIn(x * d.rate, d.currency) : x === 0 ? "$0" : x < 0.01 ? `$${x.toFixed(4)}` : `$${x.toFixed(2)}`; };
 export const tokens = (x: number | null | undefined) => (x === null || x === undefined ? "—" : x >= 1e6 ? `${(x / 1e6).toFixed(2)}M` : x >= 1e3 ? `${(x / 1e3).toFixed(1)}k` : String(Math.round(x)));
 export const providerOf = (label: string) => label.split("/")[0];
 export const PROVIDER_NAME: Record<string, string> = { openai: "GPT (OpenAI)", gemini: "Gemini (Google)", anthropic: "Claude (Anthropic)", mock: "Scripted (synthetic)" };

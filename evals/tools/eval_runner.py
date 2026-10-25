@@ -163,13 +163,20 @@ class Runner:
                           verification=verification_of(case), status=status, reason=reason, repetition=repetition, severity=case.get("severity"),
                           synthetic_model=bool(self.target and self.target.synthetic and is_chat(case)), **extra)
 
+    @staticmethod
+    def _total_cost(result: CaseResult) -> float:
+        """Everything this execution spent that is known: the model's calls, the judge, and the calls of attempts that failed and were run again. The platform adds these up
+        while a job runs, to stop it when a daily or monthly spending limit would be passed."""
+        retries = sum((cost_from_usage(u, True)[0] or 0.0) for u in (result.retry_usage or []))
+        return round((result.cost_usd or 0.0) + (result.judge_cost_usd or 0.0) + retries, 6)
+
     def _record(self, result: CaseResult) -> CaseResult:
         self.results.append(result)
         with (self.out / "results.jsonl").open("a", encoding="utf-8") as f:           # appended now, not at the end: a cancel or a crash loses nothing
             f.write(json.dumps(result.as_dict(), default=str) + "\n")
         self.event("case", f"{result.case_id} r{result.repetition}: {result.status}" + (f" ({result.reason})" if result.reason else ""),
                    case_id=result.case_id, repetition=result.repetition, status=result.status, reason=result.reason, latency_ms=result.latency_ms,
-                   cost_usd=result.cost_usd, critical_failed=result.critical_failed, attempts=result.attempts, model=self.args.model, stage=result.category,
+                   cost_usd=result.cost_usd, judge_cost_usd=result.judge_cost_usd, total_cost_usd=self._total_cost(result), critical_failed=result.critical_failed, attempts=result.attempts, model=self.args.model, stage=result.category,
                    input_tokens=result.input_tokens, output_tokens=result.output_tokens, reply=self._reply_excerpt(result))
         self.event("progress", **self.progress())
         reason = stats.should_stop_on_critical([r.as_dict() for r in self.results], enabled=self.args.stop_on_critical)
@@ -250,6 +257,14 @@ class Runner:
             self.spent_usd += cost
         return lost.as_dict()
 
+    def _turn_guard(self, turn: int) -> Optional[str]:
+        """Asked before every turn after the first of a real-model conversation: would this turn still fit in the run's budget? Money already spent counts, and so does an estimate for
+        the turns this conversation has had so far (their real cost is only known when it ends). A scripted model costs nothing, so it is never stopped."""
+        budget = self.args.budget_usd
+        if budget is None or (self.target and self.target.synthetic):
+            return None
+        return None if stats.can_afford(self.spent_usd + CHAT_TURN_ESTIMATE_USD * (turn - 1), CHAT_TURN_ESTIMATE_USD, budget) else "budget_exceeded"
+
     async def _execute_once(self, case: dict, repetition: int) -> CaseResult:
         chat = is_chat(case)
         direct = self.args.mode == "direct"
@@ -280,7 +295,7 @@ class Runner:
                 if chat:
                     resolved = resolve_case(case, self.env.ids)
                     rt = ChatRuntime(client=self.client, chat_url=CHAT_URL, mock_url=MOCK_URL, api_url=API, env=self.env, login=self._login, target=self.target,
-                                     meter=self.meter, timeout=float(self.args.chat_timeout))
+                                     meter=self.meter, timeout=float(self.args.chat_timeout), turn_guard=self._turn_guard)
                     return await execute_chat_case(resolved, rt, execution_id=f"{self.run_id}/r{repetition}/{case['case_id']}")
                 actor = case["input"].get("actor") or {}
                 token = await self._login(actor["user_ref"])
@@ -311,6 +326,16 @@ class Runner:
             return self._make(case, repetition, "infrastructure_error", "agent_error", error=str(observation["agent_error"])[:300], latency_ms=latency,
                               usage=observation.get("usage"), trace_artifact=self._trace_artifact(case, repetition, observation))
 
+        if chat and observation.get("stopped"):
+            # the budget ran out between two turns: what the finished turns cost is kept, and nothing is judged (half a conversation is not a verdict)
+            usage = observation.get("usage")
+            cost, known = cost_from_usage(usage, uses_model)
+            if cost:
+                self.spent_usd += cost
+            return self._make(case, repetition, "blocked", str(observation["stopped"]), latency_ms=latency, usage=usage, cost_usd=cost, cost_known=known,
+                              model_id=self.target.model if self.target else None, input_tokens=(usage or {}).get("input_tokens"), output_tokens=(usage or {}).get("output_tokens"),
+                              cached_tokens=(usage or {}).get("cached_tokens"), turns=len(((observation.get("transcript") or {}).get("turns")) or []),
+                              trace_artifact=self._trace_artifact(case, repetition, observation))
         if chat and self.target:
             wrong = wrong_models(self.target.model, ((observation.get("usage") or {}).get("by_model")) or {})
             if wrong:

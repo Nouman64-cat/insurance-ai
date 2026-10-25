@@ -17,6 +17,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from database import get_session
 from services.idempotency import reviewed_operation
 from routers.users import verify_admin
+from services.route_security import ADMIN, UNDERWRITING, acting_member, member_or_service, require_roles, tenant_member
 from rule_evaluator import ContextDerivationService, evaluate_rule_set, evaluate_scope
 from services.underwriting_limits import (
     age_from_dob,
@@ -40,7 +41,11 @@ from shared.models.core import (
     SubCategory,
 )
 
-router = APIRouter(prefix="/tenants/{tenant_id}/rules", tags=["Rule Engine"])
+# Deny by default: every route needs a verified login of a user of THIS tenant (a Super Admin may reach any); the stricter role for an action is added on the route itself.
+# Roles follow the chat agent's own permission matrix (permission.py): rule AUTHORING is for an Underwriter or Admin; DEPLOYING or archiving a version, deleting, and the category tree are Admin only.
+router = APIRouter(prefix="/tenants/{tenant_id}/rules", tags=["Rule Engine"], dependencies=[Depends(tenant_member)])
+# The early-knockout check is also called by the API gateway's quote worker, which has no user: it presents the shared internal secret instead (see member_or_service).
+early_router = APIRouter(prefix="/tenants/{tenant_id}/rules", tags=["Rule Engine"], dependencies=[Depends(member_or_service)])
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1249,7 +1254,7 @@ async def list_categories(tenant_id: UUID, session: AsyncSession = Depends(get_s
     return output
 
 
-@router.post("/categories", status_code=status.HTTP_201_CREATED, summary="Create a Category")
+@router.post("/categories", dependencies=[Depends(require_roles(*ADMIN))], status_code=status.HTTP_201_CREATED, summary="Create a Category")
 @reviewed_operation("tenant.rules.create_category", ("id", "code"), status_code=201, resource_type="rule")
 async def create_category(tenant_id: UUID, body: CategoryCreateRequest, session: AsyncSession = Depends(get_session)):
     existing = (await session.exec(select(Category).where(Category.code == body.code))).first()
@@ -1262,7 +1267,7 @@ async def create_category(tenant_id: UUID, body: CategoryCreateRequest, session:
     return {"id": str(cat.id), "code": cat.code}
 
 
-@router.post("/categories/{category_id}/subcategories", status_code=status.HTTP_201_CREATED, summary="Create a SubCategory")
+@router.post("/categories/{category_id}/subcategories", dependencies=[Depends(require_roles(*ADMIN))], status_code=status.HTTP_201_CREATED, summary="Create a SubCategory")
 @reviewed_operation("tenant.rules.create_subcategory", ("id", "code"), status_code=201, resource_type="rule")
 async def create_subcategory(tenant_id: UUID, category_id: UUID, body: SubCategoryCreateRequest, session: AsyncSession = Depends(get_session)):
     category = await session.get(Category, category_id)
@@ -1275,7 +1280,7 @@ async def create_subcategory(tenant_id: UUID, category_id: UUID, body: SubCatego
     return {"id": str(sub.id), "code": sub.code}
 
 
-@router.post("/subcategories/{subcategory_id}/eligibility-profiles", status_code=status.HTTP_201_CREATED, summary="Create an EligibilityProfile")
+@router.post("/subcategories/{subcategory_id}/eligibility-profiles", dependencies=[Depends(require_roles(*ADMIN))], status_code=status.HTTP_201_CREATED, summary="Create an EligibilityProfile")
 @reviewed_operation("tenant.rules.create_eligibility_profile", ("id", "channel_code"), status_code=201, resource_type="rule")
 async def create_eligibility_profile(tenant_id: UUID, subcategory_id: UUID, body: EligibilityProfileCreateRequest, session: AsyncSession = Depends(get_session)):
     subcategory = await session.get(SubCategory, subcategory_id)
@@ -1292,7 +1297,17 @@ async def create_eligibility_profile(tenant_id: UUID, subcategory_id: UUID, body
     return {"id": str(profile.id), "channel_code": profile.channel_code}
 
 
-@router.delete("/categories/{category_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete a Category")
+def _in_scope(rule_set: Optional[RuleSet], tenant_id: UUID) -> bool:
+    """A rule set is visible to this tenant when it is the tenant's own or a platform-wide one (no tenant). Another tenant's is treated as if it did not exist."""
+    return rule_set is not None and rule_set.tenant_id in (None, tenant_id)
+
+
+async def _version_in_scope(session: AsyncSession, tenant_id: UUID, version: Optional[RuleVersion]) -> bool:
+    return version is not None and _in_scope(await session.get(RuleSet, version.rule_set_id), tenant_id)
+
+
+
+@router.delete("/categories/{category_id}", dependencies=[Depends(require_roles(*ADMIN))], status_code=status.HTTP_204_NO_CONTENT, summary="Delete a Category")
 async def delete_category(tenant_id: UUID, category_id: UUID, session: AsyncSession = Depends(get_session)):
     subs = (await session.exec(select(SubCategory).where(SubCategory.category_id == category_id))).all()
     if subs:
@@ -1304,7 +1319,7 @@ async def delete_category(tenant_id: UUID, category_id: UUID, session: AsyncSess
     return None
 
 
-@router.delete("/subcategories/{subcategory_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete a SubCategory")
+@router.delete("/subcategories/{subcategory_id}", dependencies=[Depends(require_roles(*ADMIN))], status_code=status.HTTP_204_NO_CONTENT, summary="Delete a SubCategory")
 async def delete_subcategory(tenant_id: UUID, subcategory_id: UUID, session: AsyncSession = Depends(get_session)):
     in_use = (await session.exec(select(RuleSet).where(RuleSet.subcategory_id == subcategory_id))).first()
     if in_use:
@@ -1316,10 +1331,10 @@ async def delete_subcategory(tenant_id: UUID, subcategory_id: UUID, session: Asy
     return None
 
 
-@router.delete("/sets/{rule_set_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete a RuleSet")
+@router.delete("/sets/{rule_set_id}", dependencies=[Depends(require_roles(*ADMIN))], status_code=status.HTTP_204_NO_CONTENT, summary="Delete a RuleSet")
 async def delete_rule_set(tenant_id: UUID, rule_set_id: UUID, session: AsyncSession = Depends(get_session)):
     rule_set = await session.get(RuleSet, rule_set_id)
-    if rule_set:
+    if _in_scope(rule_set, tenant_id):
         versions = (await session.exec(select(RuleVersion).where(RuleVersion.rule_set_id == rule_set.id))).all()
         for version in versions:
             rules = (await session.exec(select(ActualRule).where(ActualRule.version_id == version.id))).all()
@@ -1327,8 +1342,11 @@ async def delete_rule_set(tenant_id: UUID, rule_set_id: UUID, session: AsyncSess
                 criteria = (await session.exec(select(RuleCriteria).where(RuleCriteria.rule_id == rule.id))).all()
                 for c in criteria:
                     await session.delete(c)
+                await session.flush()                      # children first: without these flushes the rule set was deleted before its versions and the database refused (HTTP 500)
                 await session.delete(rule)
+            await session.flush()
             await session.delete(version)
+        await session.flush()
         await session.delete(rule_set)
         await session.commit()
     return None
@@ -1417,7 +1435,7 @@ async def list_rule_sets(
     return output
 
 
-@router.post("/sets", status_code=status.HTTP_201_CREATED, summary="Create a new rule set")
+@router.post("/sets", dependencies=[Depends(require_roles(*UNDERWRITING))], status_code=status.HTTP_201_CREATED, summary="Create a new rule set")
 @reviewed_operation("tenant.rules.create_rule_set", ("id", "rule_code", "message"), status_code=201, resource_type="rule")
 async def create_rule_set(tenant_id: UUID, body: RuleSetCreateRequest, session: AsyncSession = Depends(get_session)):
     existing = (await session.exec(select(RuleSet).where(RuleSet.rule_code == body.rule_code))).first()
@@ -1452,7 +1470,7 @@ async def create_rule_set(tenant_id: UUID, body: RuleSetCreateRequest, session: 
 @router.get("/sets/{rule_set_id}", summary="Get detailed rule set with rules, criteria, and versions")
 async def get_rule_set_detail(tenant_id: UUID, rule_set_id: UUID, session: AsyncSession = Depends(get_session)):
     rule_set = await session.get(RuleSet, rule_set_id)
-    if not rule_set:
+    if not _in_scope(rule_set, tenant_id):
         raise HTTPException(status_code=404, detail="Rule set not found.")
 
     cat, sub, elig = await _rule_set_hierarchy_labels(session, rule_set)
@@ -1523,11 +1541,11 @@ async def get_rule_set_detail(tenant_id: UUID, rule_set_id: UUID, session: Async
     }
 
 
-@router.post("/sets/{rule_set_id}/versions", status_code=status.HTTP_201_CREATED, summary="Create a new draft version")
+@router.post("/sets/{rule_set_id}/versions", dependencies=[Depends(require_roles(*UNDERWRITING))], status_code=status.HTTP_201_CREATED, summary="Create a new draft version")
 @reviewed_operation("tenant.rules.create_rule_version", ("id", "version_number", "status"), status_code=201, resource_type="rule")
 async def create_rule_version(tenant_id: UUID, rule_set_id: UUID, session: AsyncSession = Depends(get_session)):
     rule_set = await session.get(RuleSet, rule_set_id)
-    if not rule_set:
+    if not _in_scope(rule_set, tenant_id):
         raise HTTPException(status_code=404, detail="Rule set not found.")
 
     latest = (
@@ -1581,10 +1599,10 @@ async def create_rule_version(tenant_id: UUID, rule_set_id: UUID, session: Async
     return {"id": str(new_version.id), "version_number": new_version.version_number, "status": new_version.status}
 
 
-@router.patch("/versions/{version_id}/status", summary="Update version status (Deploy/Archive)")
-async def update_version_status(tenant_id: UUID, version_id: UUID, body: VersionStatusRequest, session: AsyncSession = Depends(get_session)):
+@router.patch("/versions/{version_id}/status", dependencies=[Depends(require_roles(*ADMIN))], summary="Update version status (Deploy/Archive)")
+async def update_version_status(tenant_id: UUID, version_id: UUID, body: VersionStatusRequest, session: AsyncSession = Depends(get_session), user=Depends(acting_member)):
     version = await session.get(RuleVersion, version_id)
-    if not version:
+    if not await _version_in_scope(session, tenant_id, version):
         raise HTTPException(status_code=404, detail="Rule version not found.")
 
     if body.status == RuleVersionStatusEnum.ACTIVE:
@@ -1601,7 +1619,7 @@ async def update_version_status(tenant_id: UUID, version_id: UUID, body: Version
             session.add(av)
 
         version.status = RuleVersionStatusEnum.ACTIVE
-        version.approved_by = body.approved_by or "Compliance Officer"
+        version.approved_by = user.full_name or user.email          # the verified approver; "approved_by" in the body is ignored (it could name anyone as the approver of a deployed rule)
         version.effective_from = datetime.utcnow()
     else:
         version.status = body.status
@@ -1629,11 +1647,11 @@ async def _tell_drift_monitor(session: AsyncSession):
         return {"error": f"{type(exc).__name__}: {str(exc)[:160]}", "note": "the rule version is live; the nightly scan will record the change"}
 
 
-@router.post("/versions/{version_id}/rules", status_code=status.HTTP_201_CREATED, summary="Add a rule to a DRAFT version")
+@router.post("/versions/{version_id}/rules", dependencies=[Depends(require_roles(*UNDERWRITING))], status_code=status.HTTP_201_CREATED, summary="Add a rule to a DRAFT version")
 @reviewed_operation("tenant.rules.add_rule", ("id", "rule_code", "priority"), status_code=201, resource_type="rule")
 async def add_rule_to_version(tenant_id: UUID, version_id: UUID, body: RuleCreateRequest, session: AsyncSession = Depends(get_session)):
     version = await session.get(RuleVersion, version_id)
-    if not version:
+    if not await _version_in_scope(session, tenant_id, version):
         raise HTTPException(status_code=404, detail="Rule version not found.")
     if version.status != RuleVersionStatusEnum.DRAFT:
         raise HTTPException(status_code=400, detail="Can only add rules to DRAFT versions.")
@@ -1664,14 +1682,16 @@ async def add_rule_to_version(tenant_id: UUID, version_id: UUID, body: RuleCreat
     return {"id": str(rule.id), "rule_code": rule.rule_code, "priority": rule.priority}
 
 
-@router.put("/versions/{version_id}/rules/{rule_id}", summary="Update a rule (DRAFT versions only)")
+@router.put("/versions/{version_id}/rules/{rule_id}", dependencies=[Depends(require_roles(*UNDERWRITING))], summary="Update a rule (DRAFT versions only)")
 async def update_rule(tenant_id: UUID, version_id: UUID, rule_id: UUID, body: RuleUpdateRequest, session: AsyncSession = Depends(get_session)):
     rule = await session.get(ActualRule, rule_id)
     if not rule or rule.version_id != version_id:
         raise HTTPException(status_code=404, detail="Rule not found.")
 
     version = await session.get(RuleVersion, version_id)
-    if not version or version.status != RuleVersionStatusEnum.DRAFT:
+    if not await _version_in_scope(session, tenant_id, version):
+        raise HTTPException(status_code=404, detail="Rule not found.")
+    if version.status != RuleVersionStatusEnum.DRAFT:
         raise HTTPException(status_code=400, detail="Can only edit rules in DRAFT versions.")
 
     update_data = body.model_dump(exclude_unset=True, exclude={"criteria", "impact_data"})
@@ -1700,10 +1720,10 @@ async def update_rule(tenant_id: UUID, version_id: UUID, rule_id: UUID, body: Ru
     return {"message": "Rule updated successfully", "rule_id": str(rule.id)}
 
 
-@router.delete("/rules/{rule_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete a rule")
+@router.delete("/rules/{rule_id}", dependencies=[Depends(require_roles(*ADMIN))], status_code=status.HTTP_204_NO_CONTENT, summary="Delete a rule")
 async def delete_rule(tenant_id: UUID, rule_id: UUID, session: AsyncSession = Depends(get_session)):
     rule = await session.get(ActualRule, rule_id)
-    if rule:
+    if rule and await _version_in_scope(session, tenant_id, await session.get(RuleVersion, rule.version_id)):
         criteria = (await session.exec(select(RuleCriteria).where(RuleCriteria.rule_id == rule.id))).all()
         for c in criteria:
             await session.delete(c)
@@ -1746,7 +1766,7 @@ async def suggest_values_endpoint(tenant_id: UUID, body: SuggestValuesRequest, s
 
 
 @router.post("/evaluate", summary="Evaluate a single rule set (by code) against input context")
-async def evaluate_rule_endpoint(tenant_id: UUID, body: EvaluateRuleRequest, session: AsyncSession = Depends(get_session)):
+async def evaluate_rule_endpoint(tenant_id: UUID, body: EvaluateRuleRequest, session: AsyncSession = Depends(get_session), user=Depends(acting_member)):
     context = await _resolve_context(tenant_id, session, body)
     return await evaluate_rule_set(
         session=session,
@@ -1754,7 +1774,7 @@ async def evaluate_rule_endpoint(tenant_id: UUID, body: EvaluateRuleRequest, ses
         context=context,
         tenant_id=tenant_id,
         proposal_id=body.proposal_id or body.case_id,
-        actor=body.actor or "Portal Admin",
+        actor=user.full_name or user.email,                # the verified caller; a name in the request body is ignored (it could name anyone in the audit trail)
     )
 
 
@@ -1766,7 +1786,7 @@ class EarlyCheckRequest(BaseModel):
     proposal_id: Optional[str] = None
 
 
-@router.post("/early-check", summary="Early knockout — would this applicant be declined before any underwriting step?")
+@early_router.post("/early-check", summary="Early knockout — would this applicant be declined before any underwriting step?")
 async def early_check_endpoint(tenant_id: UUID, body: EarlyCheckRequest, session: AsyncSession = Depends(get_session)):
     """Returns {"decision": "DECLINE" | "REFER" | "PROCEED", "reasons": [...], "rule_codes": [...]}.
     Never raises on a missing rule set: with nothing to evaluate the answer is PROCEED."""
@@ -1777,7 +1797,7 @@ async def early_check_endpoint(tenant_id: UUID, body: EarlyCheckRequest, session
 
 
 @router.post("/evaluate-scope", summary="Evaluate every rule set in scope for a category/subcategory/channel")
-async def evaluate_scope_endpoint(tenant_id: UUID, body: EvaluateScopeRequest, session: AsyncSession = Depends(get_session)):
+async def evaluate_scope_endpoint(tenant_id: UUID, body: EvaluateScopeRequest, session: AsyncSession = Depends(get_session), user=Depends(acting_member)):
     context = await _resolve_context(tenant_id, session, body)
     return await evaluate_scope(
         session=session,
@@ -1786,15 +1806,19 @@ async def evaluate_scope_endpoint(tenant_id: UUID, body: EvaluateScopeRequest, s
         channel_code=body.channel_code,
         context=context,
         proposal_id=body.proposal_id,
-        actor=body.actor or "Portal Admin",
+        actor=user.full_name or user.email,                # the verified caller; a name in the request body is ignored (it could name anyone in the audit trail)
     )
 
 
-@router.get("/logs", summary="Get rule evaluation audit logs")
-async def list_rule_evaluation_logs(tenant_id: UUID, limit: int = Query(default=50, le=200), session: AsyncSession = Depends(get_session)):
+@router.get("/logs", dependencies=[Depends(require_roles(*UNDERWRITING))], summary="Get rule evaluation audit logs")
+async def list_rule_evaluation_logs(tenant_id: UUID, limit: int = Query(default=50, le=200), session: AsyncSession = Depends(get_session), user=Depends(acting_member)):
+    # The logs hold CNICs and the full input of each evaluation. A tenant sees its own; the rows that belong to no tenant are the platform's, for a Super Admin only.
+    from routers.auth import _role_name
+    own = RuleEvaluationLog.tenant_id == tenant_id
+    scope = own | (RuleEvaluationLog.tenant_id == None) if await _role_name(user, session) == "SuperAdmin" else own          # noqa: E711
     query = (
         select(RuleEvaluationLog)
-        .where((RuleEvaluationLog.tenant_id == tenant_id) | (RuleEvaluationLog.tenant_id == None))  # noqa: E711
+        .where(scope)
         .order_by(RuleEvaluationLog.evaluated_at.desc())
         .limit(limit)
     )

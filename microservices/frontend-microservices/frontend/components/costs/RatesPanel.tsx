@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { tx } from "@/lib/i18n/tx";
-import { addRate, getRates, type Rates } from "@/lib/evalCosts";
+import { addComputeRate, addRate, getComputeRates, getRates, type Machine, type Rates } from "@/lib/evalCosts";
 import { Field, Modal, Notice, btnGhost, btnPrimary, card, day, inputCls, shortId, when } from "./ui";
 
 export function RateForm({ defaultCurrency, onClose, onSaved }: { defaultCurrency: string; onClose: () => void; onSaved: (warning: string | null) => void }) {
@@ -41,6 +41,51 @@ export function RateForm({ defaultCurrency, onClose, onSaved }: { defaultCurrenc
   );
 }
 
+export function ComputeRateForm({ onClose, onSaved }: { onClose: () => void; onSaved: (warning: string | null) => void }) {
+  const [name, setName] = useState("");
+  const [resource, setResource] = useState<"gpu" | "cpu">("gpu");
+  const [price, setPrice] = useState("");
+  const [from, setFrom] = useState(new Date().toISOString().slice(0, 10));
+  const [source, setSource] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const problems = [!name.trim() ? tx("Name the machine.") : null, !(Number(price) >= 0) || price.trim() === "" ? tx("Enter the price per hour in US dollars.") : null, !source.trim() ? tx("Say where the price came from.") : null].filter(Boolean) as string[];
+  async function save() {
+    setBusy(true);
+    setError(null);
+    try { onSaved((await addComputeRate({ name: name.trim(), resource, usd_per_hour: Number(price), effective_from: from, source: source.trim() })).warning); }
+    catch (e) { setError(e instanceof Error ? e.message : "The rate could not be saved."); }
+    finally { setBusy(false); }
+  }
+  return (
+    <Modal title={tx("Record what a machine costs per hour")} onClose={onClose}>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label={tx("Machine (the name an evaluation will report)")}><input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} placeholder="A10G on-demand" data-testid="machine-name" /></Field>
+        <Field label={tx("Resource")}><select className={inputCls} value={resource} onChange={(e) => setResource(e.target.value as "gpu" | "cpu")} data-testid="machine-resource"><option value="gpu">GPU</option><option value="cpu">CPU</option></select></Field>
+        <Field label={tx("US dollars per hour")}><input className={inputCls} inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} data-testid="machine-price" /></Field>
+        <Field label={tx("Takes effect on")}><input type="date" className={inputCls} value={from} onChange={(e) => setFrom(e.target.value)} /></Field>
+      </div>
+      <Field label={tx("Where the price came from (required)")} hint={tx("A price list, an invoice or an internal cost sheet.")}><textarea className={inputCls} rows={2} value={source} onChange={(e) => setSource(e.target.value)} data-testid="machine-source" /></Field>
+      {error && <Notice>{error}</Notice>}
+      {problems.length > 0 && source !== "" && <Notice kind="warn">{problems.join(" ")}</Notice>}
+      <div className="flex justify-end gap-2"><button type="button" className={btnGhost} onClick={onClose}>{tx("Cancel")}</button><button type="button" className={btnPrimary} disabled={busy || problems.length > 0} onClick={save} data-testid="machine-save">{tx("Record the price")}</button></div>
+    </Modal>
+  );
+}
+
+export function ComputeRatesView({ machines, onAdd }: { machines: Machine[]; onAdd: () => void }) {
+  return (
+    <section className={card} data-testid="compute-rates-view">
+      <div className="flex items-center justify-between gap-2"><h2 className="text-sm font-bold text-slate-900">{tx("Machine time (self-hosted models)")}</h2><button type="button" className={btnGhost} onClick={onAdd} data-testid="add-machine">{tx("Record a machine price")}</button></div>
+      <p className="mt-1 text-[11px] text-slate-500">{tx("A model that runs on our own hardware is not billed per token: its cost is the time the machine is held times its price per hour. An evaluation of such a model reports the machine it used and for how long; a machine with no price here is an unknown cost, never free. No self-hosted model is registered yet, so nothing uses these today.")}</p>
+      {machines.length === 0 ? <p className="mt-3 text-center text-xs text-slate-400" data-testid="no-machines">{tx("No machine price is recorded.")}</p> : (
+        <table className="mt-3 w-full text-xs"><thead><tr className="text-left text-slate-400 border-b border-slate-100"><th className="py-1 font-semibold">{tx("Machine")}</th><th className="font-semibold">{tx("Resource")}</th><th className="font-semibold">{tx("Per hour today")}</th><th className="font-semibold">{tx("Source")}</th><th className="font-semibold">{tx("Changes")}</th></tr></thead>
+          <tbody>{machines.map((m) => <tr key={`${m.name}-${m.resource}`} className="border-t border-slate-100"><td className="py-1.5 font-semibold text-slate-800">{m.name}</td><td>{m.resource.toUpperCase()}</td><td>{m.current ? `$${m.current.usd_per_hour}` : tx("none in force")}</td><td className="text-slate-600">{m.current?.source ?? ""}</td><td className="text-slate-400">{m.history.length}</td></tr>)}</tbody></table>
+      )}
+    </section>
+  );
+}
+
 export function RatesView({ rates, onAdd }: { rates: Rates; onAdd: () => void }) {
   const codes = Object.keys(rates.currencies);
   return (
@@ -65,11 +110,13 @@ export function RatesView({ rates, onAdd }: { rates: Rates; onAdd: () => void })
 
 export default function RatesPanel({ onChanged, refreshKey }: { onChanged: () => void; refreshKey: number }) {
   const [rates, setRates] = useState<Rates | null>(null);
+  const [machines, setMachines] = useState<Machine[]>([]);
+  const [addingMachine, setAddingMachine] = useState(false);
   const [adding, setAdding] = useState(false);
   const [warning, setWarning] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
-  const load = useCallback(() => getRates().then((r) => { setRates(r); setError(null); }).catch((e) => setError(e instanceof Error ? e.message : "Could not load the rates.")), []);
+  const load = useCallback(() => Promise.all([getRates(), getComputeRates()]).then(([r, m]) => { setRates(r); setMachines(m); setError(null); }).catch((e) => setError(e instanceof Error ? e.message : "Could not load the rates.")), []);
   useEffect(() => { load(); }, [load, refreshKey]);
   if (error && !rates) return <Notice>{error}</Notice>;
   if (!rates) return <p className="py-16 text-center text-xs text-slate-400">{tx("Loading…")}</p>;
@@ -78,6 +125,8 @@ export default function RatesPanel({ onChanged, refreshKey }: { onChanged: () =>
       {saved && <div className="mb-3"><Notice kind="ok">{tx("The rate was recorded.")}</Notice></div>}
       {warning && <div className="mb-3"><Notice kind="warn">{warning}</Notice></div>}
       <RatesView rates={rates} onAdd={() => { setSaved(false); setWarning(null); setAdding(true); }} />
+      <div className="mt-4"><ComputeRatesView machines={machines} onAdd={() => { setSaved(false); setWarning(null); setAddingMachine(true); }} /></div>
+      {addingMachine && <ComputeRateForm onClose={() => setAddingMachine(false)} onSaved={(w) => { setAddingMachine(false); setSaved(true); setWarning(w); load(); onChanged(); }} />}
       {adding && <RateForm defaultCurrency={Object.keys(rates.currencies)[0] ?? "PKR"} onClose={() => setAdding(false)} onSaved={(w) => { setAdding(false); setSaved(true); setWarning(w); load(); onChanged(); }} />}
     </>
   );

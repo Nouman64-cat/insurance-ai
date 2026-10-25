@@ -7,10 +7,13 @@ import DatasetsWorkspace from "@/components/evaluation/DatasetsWorkspace";
 import DriftWorkspace from "@/components/evaluation/DriftWorkspace";
 import { tx } from "@/lib/i18n/tx";
 import { HEALTH_COLOR, MODES, STUDIO_ROOT, TOOLS, getGraph, studioHref, type ModeId, type StudioGraph, type ToolId } from "@/lib/evalStudio";
+import { setCurrency, setRates, useDisplayCurrency } from "@/lib/displayCurrency";
+import { getRates } from "@/lib/evalCosts";
 import { useQueryState } from "@/lib/useQueryState";
 import CommandPalette from "./CommandPalette";
 import ExploreView from "./ExploreView";
 import InvestigateView from "./InvestigateView";
+import SavedViews from "./SavedViews";
 import SimulateView from "./SimulateView";
 
 /** The overall state of the ecosystem as one pill in the header: the worst thing on the map and how many nodes are affected. */
@@ -29,7 +32,25 @@ export function StatePill({ graph }: { graph: StudioGraph | null }) {
 
 const navLink = (on: boolean) => `flex-none whitespace-nowrap border-b-2 px-3 pb-2 pt-1.5 text-xs font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 ${on ? "border-blue-600 text-blue-700 dark:border-sky-400 dark:text-sky-200" : "border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100"}`;
 
+/** Which currency money is shown in, for the whole studio. Only offered when a rate has been recorded (otherwise there is nothing to choose); a figure is converted at today's rate. */
+export function CurrencySwitch() {
+  const d = useDisplayCurrency();
+  const codes = Object.keys(d.rates);
+  useEffect(() => { getRates().then((r) => setRates(Object.fromEntries(Object.entries(r.currencies).filter(([, v]) => v.current).map(([k, v]) => [k, v.current!.units_per_usd])))).catch(() => undefined); }, []);
+  if (codes.length === 0) return null;
+  const rate = d.rates[d.currency];
+  return (
+    <label className="flex items-center gap-1.5 text-[11px] text-slate-500" title={rate ? `${tx("Figures are converted at today's rate: 1 USD =")} ${rate} ${d.currency}. ${tx("Charts on Costs & Budgets convert each day at that day's own rate.")}` : tx("Show money in")}>
+      <span className="sr-only">{tx("Show money in")}</span>
+      <select value={rate ? d.currency : "USD"} onChange={(e) => setCurrency(e.target.value)} className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200" data-testid="studio-currency" aria-label={tx("Show money in")}>
+        <option value="USD">USD</option>{codes.map((c) => <option key={c} value={c}>{c}</option>)}
+      </select>
+    </label>
+  );
+}
+
 function Studio() {
+  useDisplayCurrency();                      // a change of display currency redraws everything below, which reads money through show() and usd()
   const [modeParam] = useQueryState("mode", "explore");
   const [toolParam] = useQueryState("tool");
   const mode = (MODES.some((m) => m.id === modeParam) ? modeParam : "explore") as ModeId;
@@ -54,6 +75,8 @@ function Studio() {
           </Link>
           <StatePill graph={graph} />
           <div className="ml-auto flex items-center gap-2">
+            <CurrencySwitch />
+            <SavedViews />
             <button type="button" onClick={() => setPalette(true)} className="flex w-44 items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-400 hover:border-sky-400 dark:border-slate-700 dark:bg-slate-900 sm:w-64" data-testid="search-button" aria-label={tx("Search the studio")}>
               <span>{tx("Search or jump to…")}</span><kbd className="rounded border border-slate-200 px-1 text-[10px] dark:border-slate-600">Ctrl K</kbd>
             </button>

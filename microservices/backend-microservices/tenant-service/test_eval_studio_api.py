@@ -34,7 +34,7 @@ async def main() -> int:
         await s.commit()
     slug, key = w["slug"], w["key"]
     async with httpx.AsyncClient(base_url=BASE, timeout=60) as c:
-        for path in ("/eval/studio/graph", "/eval/studio/observed", "/eval/studio/search?q=abc", "/eval/studio/impact", f"/eval/studio/impact/item?key={key}", "/eval/studio/results"):
+        for path in ("/eval/studio/graph", "/eval/studio/observed", "/eval/studio/search?q=abc", "/eval/studio/impact", f"/eval/studio/impact/item?key={key}", "/eval/studio/results", "/eval/studio/analytics"):
             check(f"anonymous callers are refused ({path.split('?')[0]})", (await c.get(path)).status_code == 401)
             check(f"an ordinary user is refused ({path.split('?')[0]})", (await c.get(path, headers=O)).status_code == 403)
         g = (await c.get("/eval/studio/graph", headers=A)).json()
@@ -62,6 +62,15 @@ async def main() -> int:
         check("executions across runs: newest first with the status counts and the filters to offer", res["total"] == 6 and res["by_status"] == {"passed": 4, "failed": 2} and res["results"][0]["run_id"] == w["after"] and slug in res["datasets"])
         check("a status filter and a run filter narrow the list", (await c.get("/eval/studio/results", headers=A, params={"dataset": slug, "status": "failed"})).json()["total"] == 2 and (await c.get("/eval/studio/results", headers=A, params={"run_id": w["before"]})).json()["total"] == 3)
         check("an unknown status is refused", (await c.get("/eval/studio/results", headers=A, params={"status": "magic"})).status_code == 422)
+        an = (await c.get("/eval/studio/analytics", headers=A, params={"dataset": slug, "days": 365})).json()
+        check("analytics for the seeded dataset counts its six executions, by model, and offers it as a dataset to choose", an["outcomes"]["total"] == 6 and an["outcomes"]["by_status"]["passed"] == 4 and an["outcomes"]["by_status"]["failed"] == 2 and slug in an["datasets"] and an["window_days"] == 365, an["outcomes"])
+        check("analytics says what it counts: real-model runs only unless scripted ones are asked for", "Real-model runs only" in an["note"] and an["include_synthetic"] is False)
+        check("an impossible window, an unknown layer and an over-long filter are refused", (await c.get("/eval/studio/analytics", headers=A, params={"days": 0})).status_code == 422 and (await c.get("/eval/studio/analytics", headers=A, params={"days": 9999})).status_code == 422
+              and (await c.get("/eval/studio/results", headers=A, params={"failed_layer": "L9"})).status_code == 422 and (await c.get("/eval/studio/results", headers=A, params={"tool": "x" * 200})).status_code == 422)
+        check("the results filters for layer, specialist, tool and window are accepted and narrow the list", (await c.get("/eval/studio/results", headers=A, params={"dataset": slug, "failed_layer": "L3"})).json()["total"] <= 6
+              and (await c.get("/eval/studio/results", headers=A, params={"dataset": slug, "tool": "record_lead"})).json()["total"] <= 6 and (await c.get("/eval/studio/results", headers=A, params={"dataset": slug, "days": 1})).json()["total"] <= 6)
+        lake = nodes.get("lake")
+        check("the map has the data lake with its counts, and a link from it to the seeded dataset", lake is not None and lake["layer"] == 1 and "objects_by_layer" in lake["stats"] and any(e["from"] == "lake" and e["to"] == f"dataset:{slug}" for e in g["edges"]), lake)
         ob = (await c.get("/eval/studio/observed", headers=A)).json()
         check("what the agent was observed doing says it is only what was observed", any(t["name"] == "record_lead" for t in ob["tools"]) and "no catalogue" in ob["note"])
     print("FAILED" if FAILS else "all passed")

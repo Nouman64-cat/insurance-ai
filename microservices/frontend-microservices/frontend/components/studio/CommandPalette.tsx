@@ -25,6 +25,8 @@ export const COMMANDS: Command[] = [
   { id: "impact", title: "Follow a change", sub: "Rule, plan or template change → cases → review → regression", href: studioHref({ lens: "impact" }), group: "Go to" },
   { id: "simulate", title: "Start an evaluation or a model benchmark", sub: "Estimate first, then run", href: studioHref({ mode: "simulate" }), group: "Go to" },
   { id: "investigate", title: "Investigate executions", sub: "Failures, traces and replay", href: studioHref({ mode: "investigate" }), group: "Go to" },
+  { id: "analytics", title: "Analytics", sub: "Pass rates, DeepEval layers, routing, latency, reliability, drift", href: studioHref({ mode: "investigate", sub: "analytics" }), group: "Go to" },
+  { id: "compare-runs", title: "Compare two runs", sub: "What got worse, what got better, cost and latency", href: studioHref({ mode: "investigate", sub: "runs" }), group: "Go to" },
   { id: "failures", title: "Show only the failures", sub: "Across every real-model run", href: studioHref({ mode: "investigate", extra: { st: "failed" } }), group: "Go to" },
   { id: "compare", title: "Compare models by quality, speed and cost", href: studioHref({ mode: "investigate", sub: "compare" }), group: "Go to" },
   { id: "datasets", title: "Golden datasets", sub: "Create, edit, approve and publish cases", href: studioHref({ tool: "datasets" }), group: "Workbench" },

@@ -16,9 +16,10 @@ from sqlalchemy import func
 from sqlmodel import select
 
 import database
+from shared.models.core import User
 from services import eval_costs
 from shared.evaluation import cost_lines, cost_store
-from shared.models.evaluation import EvalCaseResult, EvalCostLine, EvalCostRecord, EvalMetricScore, EvalPricingVersion, EvalRun
+from shared.models.evaluation import EvalCaseResult, EvalComputeRate, EvalCostLine, EvalCostRecord, EvalMetricScore, EvalPricingVersion, EvalRun
 
 FAILS = 0
 
@@ -79,6 +80,24 @@ async def main() -> int:
             check("a second backfill of the same run adds nothing", await cost_store.backfill_run(s, run) == 0)
             run.known_cost_usd = 9.99
             check("a run whose recorded cost no longer matches its lines is reported", (await eval_costs.attribution(s, run_id, states=("ingesting",)))["with_problems"] == 1)
+
+            # ── a self-hosted model: machine time, priced from the recorded hourly rate ─────────────────────────────────────────────
+            uid = (await s.exec(select(User.id).limit(1))).first()
+            s.add(EvalComputeRate(name="TEST-GPU", resource="gpu", usd_per_hour=1.8, effective_from=datetime(2001, 1, 1), source="test price list", recorded_by=uid))
+            await s.flush()
+            sid = f"t-self-{uuid.uuid4().hex[:8]}"
+            srun = EvalRun(run_id=sid, state="ingesting", kind="benchmark_agent", model_id="self/llama", config={"mode": "agent", "model_id": "self/llama"}, pricing_version_id=old_prices.id, started_at=datetime(2001, 6, 1), known_cost_usd=0.0)
+            s.add(srun)
+            await s.flush()
+            s.add(EvalCaseResult(run_row_id=srun.id, case_key="IND-S-1", repetition=1, status="passed", operation="chat", llm_calls=1, cost_usd=0.9, cost_known=True,
+                                 usage={"status": "attributed", "calls": 1, "input_tokens": 0, "output_tokens": 0, "cached_tokens": 0, "by_model": {}, "compute": [{"resource": "gpu", "seconds": 1800, "rate": "TEST-GPU"}, {"resource": "gpu", "seconds": 60, "rate": "NOT-RECORDED"}]}))
+            await s.flush()
+            srun.known_cost_usd, srun.unknown_cost_executions = 0.9, 1
+            made2 = await cost_store.backfill_run(s, srun)
+            sl = [l for l in await cost_store.stored_lines(s, sid) if l["component"] == "self_hosted"]
+            check("a stored run that used machine time gets self_hosted lines: 30 min of GPU at $1.80/h is $0.90, in seconds", made2 == 2 and any(abs((l["usd"] or 0) - 0.9) < 1e-9 and l["unit_kind"] == "gpu_seconds" and l["input_units"] == 1800 for l in sl), sl)
+            check("a machine with no recorded rate is an unknown line, never free", any(l["usd"] is None and l["cost_kind"] == "unknown" and l["model"] == "NOT-RECORDED" for l in sl))
+            check("the run's cost and its lines agree", (await eval_costs.attribution(s, sid, states=("ingesting",)))["with_problems"] == 0, str((await eval_costs.attribution(s, sid, states=("ingesting",)))["runs"]))
         finally:
             await s.rollback()
     print("FAILED" if FAILS else "all passed")

@@ -2,6 +2,7 @@
 // integration test can drive exactly the calls the pages make (see evals/frontend/run_costs_integration.py). No React in here.
 import api from "@/app/services/api";
 import { withReasons, type Estimate, type JobRequest } from "@/lib/evalBenchmarks";
+import { formatIn, showUsd } from "@/lib/displayCurrency";
 
 // ── Types (what the backend returns; a null is "not known", never zero) ─────────────────────────────────────────────
 
@@ -22,6 +23,8 @@ export interface Trends {
 }
 
 export interface Rate { id: string; currency: string; units_per_usd: number; effective_from: string; source: string; recorded_by: string; created_at: string }
+export interface ComputeRate { id: string; name: string; resource: "gpu" | "cpu"; usd_per_hour: number; effective_from: string; source: string; recorded_by: string; created_at: string }
+export interface Machine { name: string; resource: "gpu" | "cpu"; current: { usd_per_hour: number; effective_from: string; source: string } | null; history: ComputeRate[] }
 export interface Rates { base: "USD"; currencies: Record<string, { current: Rate | null; history: Rate[] }> }
 
 export interface Certainty { confirmed_usd: number; estimated_usd: number; total_usd: number; unknown_lines: number }
@@ -64,14 +67,20 @@ export type ReconStatus = "matched" | "under_recorded" | "over_recorded" | "inco
 export interface Reconciliation { status: ReconStatus; billed_usd: number; recorded_usd: number; difference_usd: number; difference_pct: number; allowed_usd: number; tolerance_pct: number; tolerance_usd: number;
   unknown_lines: number; line_count: number; explanation: string[]; confirms: boolean; note?: string | null; at?: string; id?: string;
   tokens: null | Record<string, { billed: number; recorded: number; difference: number; difference_pct: number; matches: boolean } | boolean>;
-  recorded: { usd: number; lines: number; unknown_lines: number; tokens: Record<string, number>; by_component: Record<string, { usd: number; lines: number }>; top_runs: { run_id: string; usd: number }[] } }
+  recorded: { usd: number; lines: number; unknown_lines: number; tokens: Record<string, number>; by_component: Record<string, { usd: number; lines: number }>; top_runs: { run_id: string; usd: number }[] };
+  gap?: UsageGap }
 export interface Statement { id: string; provider: string; period_start: string; period_end: string; billed_usd: number; reference: string | null; source: string; billed_tokens: { input: number | null; output: number | null; cached: number | null };
   tolerance_pct: number; tolerance_usd: number; supersedes_id: string | null; entered_by: string; created_at: string; superseded: boolean; live: Reconciliation | null;
   last_reconciliation: { id: string; status: ReconStatus; at: string; by: string; note: string | null; recorded_usd: number; difference_usd: number } | null }
 export interface StatementDetail extends Omit<Statement, "last_reconciliation"> { scope_note: string;
   reconciliations: { id: string; status: ReconStatus; billed_usd: number; recorded_usd: number; difference_usd: number; difference_pct: number; unknown_lines: number; note: string | null; detail: Record<string, unknown>; by: string; at: string }[] }
+export interface DayGap { key: string; billed_usd: number; recorded_usd: number; difference_usd: number; verdict: "matches" | "billed_not_recorded" | "billed_more" | "recorded_more" }
+export interface UsageGap { days: DayGap[]; models: DayGap[]; largest_days: DayGap[]; largest_models: DayGap[]; days_billed_not_recorded: string[]; explanation: string[] }
+export interface UsageDetail { by_day: Record<string, Record<string, number>>; by_model: Record<string, Record<string, number>>; filename?: string }
+export interface ImportPreview { filename: string; columns: Record<string, string>; rows: number; rows_used: number; skipped: { line: number; reason: string }[]; skipped_count: number; period_start: string; period_end: string;
+  billed_usd: number | null; tokens: { input: number; output: number; cached: number } | null; by_day: UsageDetail["by_day"]; by_model: UsageDetail["by_model"]; warnings: string[]; recorded_usd: number; gap: UsageGap }
 export interface StatementIn { provider: string; period_start: string; period_end: string; billed_usd: number; reference?: string; source: string; billed_input_tokens?: number; billed_output_tokens?: number;
-  billed_cached_tokens?: number; tolerance_pct?: number; tolerance_usd?: number; supersedes_id?: string; note?: string }
+  billed_cached_tokens?: number; tolerance_pct?: number; tolerance_usd?: number; supersedes_id?: string; note?: string; usage_detail?: UsageDetail }
 export interface CertaintyWindow { from: string; to: string; totals: Certainty; by_provider: Record<string, { total_usd: number; lines: number; unknown_lines: number; confirmed_usd: number; estimated_usd: number }>;
   confirmed_by: { statement_id: string; provider: string; period_start: string; period_end: string; billed_usd: number }[]; meaning: Record<string, string> }
 
@@ -101,6 +110,7 @@ export const getAttribution = async (runId?: string) => (await api.get<Attributi
 export const getCertainty = async (from?: string, to?: string) => (await api.get<CertaintyWindow>("/eval/costs/certainty", { params: q({ from, to }) })).data;
 export const listStatements = async (provider?: string) => (await api.get<{ statements: Statement[]; scope_note: string }>("/eval/costs/statements", { params: q({ provider }) })).data;
 export const getStatement = async (id: string) => (await api.get<StatementDetail>(`/eval/costs/statements/${id}`)).data;
+export const getComputeRates = async () => (await api.get<{ machines: Machine[] }>("/eval/costs/compute-rates")).data.machines;
 export const getRates = async () => (await api.get<Rates>("/eval/costs/rates")).data;
 
 // ── Acting (a refusal comes back as an Error whose message lists the reasons) ───────────────────────────────────────
@@ -114,8 +124,12 @@ async function refusing<T>(call: () => Promise<T>): Promise<T> {
 }
 export const setBudget = (period: "day" | "month", body: { limit_usd: number | null; warn_at_pct: number; enforce: boolean; reason: string }) =>
   refusing(async () => (await api.put<{ limit: BudgetChange; status: BudgetStatus }>(`/eval/budget/${period}`, body)).data);
+/** Read a provider's usage export (the text of a CSV) without saving anything: what it says, and where it differs from what was recorded, day by day and model by model. */
+export const previewStatementFile = (provider: string, filename: string, content: string) => refusing(async () => (await api.post<ImportPreview>("/eval/costs/statements/preview", { provider, filename, content })).data);
 export const addStatement = (body: StatementIn) => refusing(async () => (await api.post<{ statement: Statement; reconciliation: Reconciliation; scope_note: string }>("/eval/costs/statements", body)).data);
 export const reconcileStatement = (id: string, note?: string) => refusing(async () => (await api.post<Reconciliation>(`/eval/costs/statements/${id}/reconcile`, { note: note || undefined })).data);
+export const addComputeRate = (body: { name: string; resource: "gpu" | "cpu"; usd_per_hour: number; effective_from: string; source: string }) =>
+  refusing(async () => (await api.post<{ rate: ComputeRate; warning: string | null }>("/eval/costs/compute-rates", body)).data);
 export const addRate = (body: { currency: string; units_per_usd: number; effective_from: string; source: string }) =>
   refusing(async () => (await api.post<{ rate: Rate; previous: Rate | null; warning: string | null }>("/eval/costs/rates", body)).data);
 
@@ -125,13 +139,13 @@ export const previewWithBudget = (req: JobRequest) =>
 
 // ── Showing money ───────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** How an amount reads, in dollars or in the second currency. Tiny sums keep four decimals (an evaluation turn costs a fraction of a cent); a null is "unknown", never 0. */
+/** How an amount reads, in the currency named (dollars by default). Tiny sums keep four decimals (an evaluation turn costs a fraction of a cent); a null is "unknown", never 0. */
 export function money(amount: number | null | undefined, currency = "USD"): string {
   if (amount === null || amount === undefined || Number.isNaN(amount)) return "unknown";
-  if (currency === "USD") return amount === 0 ? "$0" : Math.abs(amount) < 0.01 ? `$${amount.toFixed(4)}` : `$${amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  if (amount === 0) return `0 ${currency}`;
-  return Math.abs(amount) >= 100 ? `${Math.round(amount).toLocaleString("en-US")} ${currency}` : `${amount.toFixed(2)} ${currency}`;
+  return formatIn(amount, currency);
 }
+/** A US-dollar amount in whatever currency the viewer has chosen for the studio (at today's rate), or in dollars when no rate is recorded. */
+export const show = showUsd;
 /** A formatter for point amounts in the chosen currency, using the rate in force today (series totals come converted day by day from the backend). */
 export function formatter(currency: string, rate: Rate | null | undefined): (usd: number | null | undefined) => string {
   if (currency === "USD" || !rate) return (usd) => money(usd, "USD");

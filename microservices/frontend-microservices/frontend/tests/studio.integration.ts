@@ -7,6 +7,7 @@
 //   reads   against the working stack, changing nothing: the same views drawn from the real datasets, rules, runs, traces and costs
 import { createElement } from "react";
 import api from "@/app/services/api";
+import { getCostOverview } from "@/lib/evalCosts";
 import { getBreakdown, getResult, listBenchmarks } from "@/lib/evalBenchmarks";
 import { decide, getDraft } from "@/lib/evalDrift";
 import * as S from "@/lib/evalStudio";
@@ -14,6 +15,11 @@ import CaseHeatmap from "@/components/studio/CaseHeatmap";
 import { COMMANDS, hitHref } from "@/components/studio/CommandPalette";
 import EcosystemMap from "@/components/studio/EcosystemMap";
 import { FinderView, ImpactView, ago, filterChanges, nextAction } from "@/components/studio/ImpactExplorer";
+import { CompareBody, RunList, runLabel } from "@/components/studio/CompareRunsView";
+import { RunSummaryBody } from "@/components/studio/RunSummary";
+import AnalyticsView, { AnalyticsBody, drill } from "@/components/studio/AnalyticsView";
+import SavedViews, { SavedViewsPanel } from "@/components/studio/SavedViews";
+import * as V from "@/lib/savedViews";
 import { ExecutionsView } from "@/components/studio/InvestigateView";
 import { ModeBanner, overlaysFor, tally } from "@/components/studio/SimulateView";
 import { HealthStrip } from "@/components/studio/ExploreView";
@@ -56,6 +62,24 @@ function pure(): void {
   check("a stored trace becomes steps in the order they happened: routing, user, tool call, tool result, answer, then the model's usage", steps.map((s) => s.lane).join() === "agent,user,tool,result,agent,usage" && steps[0].title.includes("claims") && steps[2].title === "Calls list_leads" && steps[steps.length - 1].title.includes("100 tokens in"), steps.map((s) => s.title));
   check("the turn's latency attaches to the agent's answer, and nothing else gets a timing it does not have", steps.filter((s) => typeof s.ms === "number").length === 1 && steps.find((s) => typeof s.ms === "number")!.text === "hello");
   check("a result with no stored trace is a single usage step (the replay says there is nothing to replay)", S.traceSteps({ trace: null, model: null, latency_ms: null, input_tokens: null, output_tokens: null, cost_usd: null, judge_cost_usd: null }).length === 1);
+  // ── saved views ──
+  const at = new Date("2026-10-24T10:00:00Z");
+  let vs = V.withView([], "Failing, 30 days", "/super-admin/evaluation?mode=investigate&sub=executions&st=failed&idays=30", at);
+  vs = V.withView(vs, "Cost", "/super-admin/evaluation?mode=investigate&sub=compare", at);
+  check("a saved view keeps its name and address, the newest first", vs.length === 2 && vs[0].name === "Cost" && vs[1].href.includes("idays=30"), vs);
+  check("saving under a name already used replaces it (in any letter case) instead of listing it twice", V.withView(vs, "cost", "/super-admin/evaluation?mode=simulate", at).length === 2 && V.withView(vs, "cost", "/super-admin/evaluation?mode=simulate", at)[0].href.endsWith("mode=simulate"));
+  check("an empty name and an address outside the studio are not saved", V.withView(vs, "  ", "/super-admin/evaluation?x=1", at) === vs && V.withView(vs, "x", "https://evil.example/", at) === vs && V.withView(vs, "x", "/super-admin/evaluationx", at) === vs);
+  check("no more than the limit are kept, the oldest dropped", Array.from({ length: 25 }, (_, i) => i).reduce((l, i) => V.withView(l, `v${i}`, "/super-admin/evaluation", at), [] as V.SavedView[]).length === V.MAX_VIEWS);
+  check("a stored list is read back only when it is well formed: garbage, a non-list and an off-site address yield nothing", V.parseViews("not json").length === 0 && V.parseViews('{"a":1}').length === 0 && V.parseViews(null).length === 0
+    && V.parseViews(JSON.stringify([{ name: "x", href: "https://evil.example/", saved_at: "now" }, { name: "ok", href: "/super-admin/evaluation?mode=simulate", saved_at: "now" }])).length === 1 && V.parseViews(JSON.stringify(vs)).length === 2);
+  check("a view is removed by name", V.withoutView(vs, "Cost").length === 1 && V.withoutView(vs, "nothing").length === 2);
+  check("without browser storage nothing breaks: reading gives an empty list, and writing says it did not work", V.loadViews().length === 0 && V.storeViews(vs) === false);
+  const panel = html(createElement(SavedViewsPanel, { views: vs, name: "", onName: noop, onSave: noop, onOpen: noop, onDelete: noop, onCopy: noop, note: null }));
+  const panelText = text(panel);
+  check("the saved-views panel lists each view, can delete it, saves under a typed name (disabled while empty) and copies a link", panel.includes('data-testid="saved-views-list"') && panelText.includes("Failing, 30 days") && panelText.includes("Cost") && panel.includes('aria-label="Delete the saved view Cost"')
+    && /<button[^>]*disabled[^>]*>\s*Save/.test(panel) && panelText.includes("Copy a link to this page") && panelText.includes("Stored in this browser only"), panelText.slice(0, 300));
+  check("with none saved the panel says so", text(html(createElement(SavedViewsPanel, { views: [], name: "", onName: noop, onSave: noop, onOpen: noop, onDelete: noop, onCopy: noop, note: "This browser would not store it" }))).includes("No saved views yet") );
+  check("the Views button is closed to begin with, and says what it opens", typeof SavedViews === "function");
   const events = [1, 2, 3, 4].map((i) => ({ seq: i, at: "", kind: "case", message: "", data: { model: i < 4 ? "openai/gpt-4o-mini" : "gemini/g", status: i === 2 ? "failed" : "passed", cost_usd: 0.01 } }));
   const t = tally(events);
   check("a running job's event stream is counted per provider", t.done === 4 && t.passed === 3 && t.failed === 1 && Math.abs(t.spent - 0.04) < 1e-9 && t.byProvider.openai.done === 3 && t.byProvider.gemini.done === 1);
@@ -146,6 +170,8 @@ async function writes(): Promise<void> {
   im = await S.getImpact(key);
   const after = html(createElement(ImpactView, { impact: im, onDecide: noop, onOpenTrace: noop, onDraft: noop, draft: null }));
   check("the chain follows: the approval stage is done and the draft case can be prepared, with nothing written to the dataset", after.includes('data-testid="stage-approval" data-state="done"') && text(after).includes("Prepare draft") && im.principle.includes("Nothing here changes a case"), im.stages);
+  const acc = im.suggested_updates.filter((u) => u.state === "accepted" && u.dataset);
+  check("each accepted suggestion with a dataset links to that dataset in the dataset manager, and nothing is written by the link", acc.length > 0 && after.includes('data-testid="open-in-dataset-manager"') && acc.every((u) => after.includes(`tool=datasets&amp;dataset=${u.dataset}`)), acc.map((u) => u.dataset));
   const dr = await getDraft(drift[1]);
   check("the prepared draft carries the reviewer's expected value and no invented input", (dr.draft.expected as { limit: number }).limit === 15 && dr.draft.expected_source === "reviewer" && dr.draft.input === null, dr.draft);
   check("an item decided cannot be decided again", !!(await rejection(() => decide(drift[1], "dismiss", "x"))));
@@ -211,6 +237,87 @@ async function reads(): Promise<void> {
     const bd = await getBreakdown(real.benchmark_id);
     const hm = html(createElement(CaseHeatmap, { breakdown: bd, hidden: new Set<string>(), onOpen: noop }));
     check("a real benchmark's cases and models become a heatmap, the weakest cases first, each cell a button that opens a trace", hm.includes('data-testid="heatmap"') && (hm.match(/data-cell=/g) ?? []).length >= bd.cases.length, hm.slice(0, 200));
+  }
+  // ── Phase 8: analytics ──
+  const an = await S.getAnalytics({ days: 365 });
+  const sumStatus = Object.values(an.outcomes.by_status).reduce((a, b) => a + b, 0);
+  const modelTotals = Object.values(an.outcomes.by_model).reduce((a, m) => a + Object.values(m).reduce((x, y) => x + y, 0), 0);
+  check("analytics: the outcome counts add up to the executions, overall and summed over the models", an.outcomes.total === sumStatus && sumStatus === modelTotals && sumStatus > 100, [an.outcomes.total, sumStatus, modelTotals]);
+  const chips = await S.listExecutions({ days: 365, limit: 1 });
+  check("analytics: the same window in the executions list has the same number of executions (the figure and the rows it opens agree)", chips.total === an.outcomes.total, [chips.total, an.outcomes.total]);
+  const gptModel = an.models.find((m) => m.startsWith("openai/"));
+  if (gptModel) {
+    const one = await S.getAnalytics({ days: 365, model: gptModel });
+    const rows = await S.listExecutions({ days: 365, model: gptModel, limit: 1 });
+    check("analytics: choosing a model narrows every figure to it, and its executions list has the same count", Object.keys(one.outcomes.by_model).join() === gptModel && rows.total === one.outcomes.total, [Object.keys(one.outcomes.by_model), rows.total, one.outcomes.total]);
+  }
+  const l3 = await S.listExecutions({ days: 365, failed_layer: "L3", limit: 3 });
+  const l3stat = Object.values(an.layers.by_model).reduce((a, m) => a + (m.L3?.failed ?? 0), 0);
+  check("analytics: the executions that failed layer L3 are the ones the layer table counts as failed, and each really failed L3", l3.total === l3stat && (l3.results.length === 0 || (await getResult(l3.results[0].result_id)).layers?.L3 === "failed"), [l3.total, l3stat]);
+  const spec = Object.keys(an.routing.specialists)[0];
+  if (spec) {
+    const sp = await S.listExecutions({ days: 365, specialist: spec, limit: 50 });
+    check("analytics: filtering by a specialist returns only executions routed to it", sp.total >= an.routing.specialists[spec].executions && sp.results.every((r) => r.specialist === spec), [sp.total, spec]);
+  }
+  const toolName = Object.keys(an.routing.tools)[0];
+  if (toolName) {
+    const tl = await S.listExecutions({ days: 365, tool: toolName, limit: 50 });
+    check("analytics: filtering by a tool returns only executions that called it", tl.total === an.routing.tools[toolName].executions && tl.results.every((r) => r.tools.includes(toolName)), [tl.total, an.routing.tools[toolName].executions]);
+  }
+  check("analytics: P50 never exceeds P95, which never exceeds the slowest, for every model", Object.values(an.latency).every((l) => l.n === 0 || ((l.p50 ?? 0) <= (l.p95 ?? 0) && (l.p95 ?? 0) <= (l.max ?? 0))));
+  check("analytics: coverage never claims more cases run than the dataset has", Object.values(an.coverage).every((c) => c.cases_total === null || c.cases_run <= c.cases_total));
+  const cost = await getCostOverview().catch(() => null);
+  const anHtml = html(createElement(AnalyticsBody, { a: an, cost }));
+  const anText = text(anHtml);
+  check("the analytics page draws all nine panels: outcomes, coverage, six layers, latency, routing, tools, reliability, drift and spend", ["outcomes", "coverage", "layers", "latency", "routing", "tools", "reliability", "drift", "spend"].every((k) => anHtml.includes(`data-testid="an-${k}"`)), anText.slice(0, 200));
+  check("the layer table has a column for each of L1 to L6 and says what a grey cell means", S.LAYER_IDS.every((l) => anText.includes(l)) && anText.includes("Grey: it did not apply"));
+  check("an outcome segment links to the executions of that model and status, in the same window", anHtml.includes(encodeURIComponent("idays") + "=365") && /href="[^"]*st=failed/.test(anHtml), anHtml.match(/href="[^"]*"/g)?.slice(0, 3));
+  check("the drill-down address carries the window, the scripted choice and the dataset, so the rows match the figure", drill({ window_days: 30, include_synthetic: true, dataset: "d" }, { fl: "L3" }).includes("idays=30") && drill({ window_days: 30, include_synthetic: true, dataset: "d" }, { fl: "L3" }).includes("isyn=1") && drill({ window_days: 30, include_synthetic: true, dataset: "d" }, { fl: "L3" }).includes("dsf=d"));
+  check("the spend panel shows the month's total with confirmed and estimated apart, and never a bare number without its basis", !cost || (anText.includes("Confirmed by a provider bill") && anText.includes("estimated from tokens")));
+  check("the map has the data lake with its objects, and it feeds the datasets", !!g.nodes.find((n) => n.kind === "lake") && g.edges.some((e) => e.kind === "stores"), g.nodes.map((n) => n.kind));
+  check("the Analytics view module renders without data (a loading state, no crash)", typeof AnalyticsView === "function");
+  const skillsNode = g.nodes.find((n) => n.kind === "skills");
+  const obsAll = await S.getObserved();
+  check("skills are on the map from what the traces recorded: the same names as the observed list, linked from the agent, each with its own count", !!skillsNode && obsAll.skills.length > 0 && (skillsNode!.stats.items as string[]).join() === obsAll.skills.map((k) => k.name).join()
+    && g.edges.some((e) => e.from === "agent" && e.to === "skills" && e.kind === "loads") && obsAll.skills.every((k) => k.executions > 0 && k.executions >= k.ran), skillsNode?.stats);
+  // ── runs: compare, summary, gate, report ──
+  const allRuns = await S.listRuns({ limit: 200 });
+  const realRuns = allRuns.filter((r) => !r.synthetic && r.dataset === "individual-single-turn" && r.executions >= 40);
+  check("the stored real runs are listed for choosing, complete ones only", realRuns.length >= 2 && allRuns.every((r) => r.state === "complete"), allRuns.length);
+  if (realRuns.length >= 2) {
+    const [newer, older] = realRuns;
+    const cmp = await S.compareRuns(older.run_id, newer.run_id);
+    const moved = cmp.newly_failing.length + cmp.newly_passing.length + cmp.changed.length;
+    check("compare: every case is counted once (changed, unchanged, and those in only one run)", moved + cmp.unchanged === cmp.cases_compared && cmp.a.executions === older.executions && cmp.b.executions === newer.executions, [moved, cmp.unchanged, cmp.cases_compared]);
+    const failed = cmp.newly_failing[0];
+    if (failed) {
+      const inA = await S.listExecutions({ run_id: older.run_id, case: failed.case, include_synthetic: true, limit: 50 });
+      const inB = await S.listExecutions({ run_id: newer.run_id, case: failed.case, include_synthetic: true, limit: 50 });
+      check("compare: a newly failing case really passed in run A and failed in run B, in the executions list", inA.results.some((r) => r.case === failed.case && r.status === "passed") && inB.results.some((r) => r.case === failed.case && r.status === "failed"), [inA.by_status, inB.by_status]);
+    }
+    const body = html(createElement(CompareBody, { c: cmp }));
+    const bodyText = text(body);
+    check("compare: the view names both runs, gives the pass-rate, cost and latency differences, and lists the changed cases with a link to each run", bodyText.includes(older.run_id) && bodyText.includes(newer.run_id) && bodyText.includes("B against A") && bodyText.includes("pass rate")
+      && (cmp.newly_failing.length === 0 || (body.includes('data-testid="cmp-failing"') && body.includes("ir=" + older.run_id))), bodyText.slice(0, 300));
+    check("compare: different models or versions are said to be not like for like, and the choice list shows each run's model, dataset and pass rate", (older.model === newer.model && older.version === newer.version) === !bodyText.includes("not like for like") && runLabel(older).includes(older.model ?? "no model"));
+    const rep = await S.getRunReport(older.run_id);
+    check("the stored report of a run is readable through the gateway", typeof rep === "string" && rep.length > 100, String(rep).slice(0, 80));
+    const detail = await S.getRunDetail(older.run_id);
+    const sum = html(createElement(RunSummaryBody, { run: detail, report: rep.slice(0, 40), onReport: noop }));
+    const sumText = text(sum);
+    check("the run summary shows the pass rate with its 95% range, the executions that gave a verdict, the repeated and flaky counts, and says so when nothing was repeated", sumText.includes(detail.run_id) && sum.includes('data-testid="run-pass-rate"') && /95% \d+%.\d+%/.test(sumText) && (detail.reliability?.repeated_cases !== 0 || sumText.includes("reliability cannot be judged")), sumText.slice(0, 300));
+    check("a run with no gate says no gate was applied, instead of showing a verdict", detail.gate !== null || (sumText.includes("No quality gate was applied") && !sum.includes('data-testid="gate-verdict"')));
+  }
+  const listHtml = html(createElement(RunList, { runs: allRuns, onCompare: noop }));
+  check("the run list shows every stored run once, with its model, dataset, pass rate and cost, each opening its executions and offering a comparison", (listHtml.match(/data-run=/g) ?? []).length === allRuns.length && allRuns.every((r) => listHtml.includes(r.run_id) && listHtml.includes("ir=" + r.run_id)) && text(listHtml).includes("Compare"), allRuns.length);
+  const gated = (await S.listRuns({ limit: 200 })).filter((r) => r.synthetic);
+  let gatedDetail: S.RunDetail | null = null;
+  for (const r of gated) { const d = await S.getRunDetail(r.run_id); if (d.gate) { gatedDetail = d; break; } }
+  if (gatedDetail) {
+    const gh = html(createElement(RunSummaryBody, { run: gatedDetail }));
+    check("a run that had a quality gate shows its verdict and every check with what was measured and what was required", gh.includes('data-testid="gate-verdict"') && text(gh).includes(gatedDetail.gate!.passed ? "passed" : "failed") && (gh.match(/<li/g) ?? []).length === gatedDetail.gate!.checks.length && text(gh).includes("required"), text(gh).slice(0, 250));
+  } else {
+    check("a run that had a quality gate shows its verdict (no stored run has one, so this was not exercised)", true);
   }
   const hl = S.headline(g);
   check("the headline sentence on the real ecosystem names how many parts are failing and the most urgent one with its reason", hl.state === "bad" ? /\d+ parts? (is|are) failing/.test(hl.text) && !!hl.nodeId && hl.text.includes(g.nodes.find((n) => n.id === hl.nodeId)!.health.reason) : hl.text.length > 10, hl);

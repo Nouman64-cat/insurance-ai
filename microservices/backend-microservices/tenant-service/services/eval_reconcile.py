@@ -17,6 +17,7 @@ from sqlalchemy import case, func
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from shared.evaluation import provider_import as pi
 from shared.evaluation import reconcile as rc
 from shared.models.evaluation import EvalCostLine, EvalProviderStatement, EvalReconciliation
 
@@ -50,10 +51,32 @@ async def recorded(session: AsyncSession, provider: str, start: datetime, end: d
             "by_component": {c: {"usd": float(u), "lines": int(n)} for c, u, n in comps}, "top_runs": [{"run_id": r, "usd": float(u)} for r, u in runs if u]}
 
 
+async def recorded_breakdown(session: AsyncSession, provider: str, start: datetime, end: datetime) -> Dict[str, Any]:
+    """The provider's recorded money per UTC day and per model in a period, for lining up with a usage export."""
+    where = (provider_expr() == provider, EvalCostLine.incurred_at >= start, EvalCostLine.incurred_at <= end, EvalCostLine.usd != None)      # noqa: E711
+    day = func.date_trunc("day", EvalCostLine.incurred_at)
+    by_day = {d.date().isoformat(): float(u) for d, u in (await session.exec(select(day, func.sum(EvalCostLine.usd)).where(*where).group_by(day))).all()}
+    by_model = {(m or "unknown"): float(u) for m, u in (await session.exec(select(EvalCostLine.model, func.sum(EvalCostLine.usd)).where(*where).group_by(EvalCostLine.model))).all()}
+    return {"by_day": by_day, "by_model": by_model}
+
+
+async def preview_import(session: AsyncSession, provider: str, filename: str, content: str) -> Dict[str, Any]:
+    """Read a usage export WITHOUT saving anything: what it says, and where it differs from what was recorded, so the person can see it before entering the bill."""
+    if provider not in PROVIDERS:
+        raise HTTPException(422, f"provider is one of {', '.join(PROVIDERS)}")
+    parsed = pi.parse_csv(content)
+    if not parsed["ok"]:
+        raise HTTPException(422, parsed["error"])
+    start, end = period_of(date.fromisoformat(parsed["period_start"]), date.fromisoformat(parsed["period_end"]))
+    rec = await recorded_breakdown(session, provider, start, end)
+    gap = pi.compare_days(parsed["by_day"], parsed["by_model"], rec["by_day"], rec["by_model"])
+    return {"filename": filename, **{k: v for k, v in parsed.items() if k != "ok"}, "recorded_usd": round(sum(rec["by_day"].values()), 6), "gap": gap}
+
+
 def _out(st: EvalProviderStatement) -> Dict[str, Any]:
     return {"id": str(st.id), "provider": st.provider, "period_start": st.period_start.date().isoformat(), "period_end": st.period_end.date().isoformat(), "billed_usd": st.billed_usd,
             "reference": st.reference, "source": st.source, "billed_tokens": {"input": st.billed_input_tokens, "output": st.billed_output_tokens, "cached": st.billed_cached_tokens},
-            "tolerance_pct": st.tolerance_pct, "tolerance_usd": st.tolerance_usd, "supersedes_id": str(st.supersedes_id) if st.supersedes_id else None, "entered_by": str(st.entered_by),
+            "has_usage_detail": bool(st.usage_detail), "tolerance_pct": st.tolerance_pct, "tolerance_usd": st.tolerance_usd, "supersedes_id": str(st.supersedes_id) if st.supersedes_id else None, "entered_by": str(st.entered_by),
             "created_at": st.created_at}
 
 
@@ -66,7 +89,11 @@ async def compare(session: AsyncSession, st: EvalProviderStatement) -> Dict[str,
     rec = await recorded(session, st.provider, st.period_start, st.period_end)
     verdict = rc.compare(billed_usd=st.billed_usd, recorded_usd=rec["usd"], unknown_lines=rec["unknown_lines"], line_count=rec["lines"], tolerance_pct=st.tolerance_pct, tolerance_usd=st.tolerance_usd,
                          billed_tokens={"input": st.billed_input_tokens, "output": st.billed_output_tokens, "cached": st.billed_cached_tokens}, recorded_tokens=rec["tokens"])
-    return {**verdict, "recorded": rec}
+    out = {**verdict, "recorded": rec}
+    if st.usage_detail and st.usage_detail.get("by_day"):
+        br = await recorded_breakdown(session, st.provider, st.period_start, st.period_end)
+        out["gap"] = pi.compare_days(st.usage_detail["by_day"], st.usage_detail.get("by_model") or {}, br["by_day"], br["by_model"])
+    return out
 
 
 async def list_statements(session: AsyncSession, provider: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -86,7 +113,7 @@ async def list_statements(session: AsyncSession, provider: Optional[str] = None)
 
 async def create_statement(session: AsyncSession, *, actor_id: UUID, provider: str, period_start: date, period_end: date, billed_usd: float, reference: Optional[str], source: str,
                            billed_tokens: Optional[Dict[str, Optional[int]]] = None, tolerance_pct: float = rc.DEFAULT_TOLERANCE_PCT, tolerance_usd: float = rc.DEFAULT_TOLERANCE_USD,
-                           supersedes_id: Optional[UUID] = None, note: Optional[str] = None) -> Dict[str, Any]:
+                           supersedes_id: Optional[UUID] = None, note: Optional[str] = None, usage_detail: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     if provider not in PROVIDERS:
         raise HTTPException(422, f"provider is one of {', '.join(PROVIDERS)}")
     if period_end < period_start:
@@ -113,7 +140,7 @@ async def create_statement(session: AsyncSession, *, actor_id: UUID, provider: s
                                                         "To correct it, replace that statement instead.", "conflicts_with": str(other.id)})
     st = EvalProviderStatement(provider=provider, period_start=start, period_end=end, billed_usd=billed_usd, reference=(reference or None), source=source.strip(),
                                billed_input_tokens=(billed_tokens or {}).get("input"), billed_output_tokens=(billed_tokens or {}).get("output"), billed_cached_tokens=(billed_tokens or {}).get("cached"),
-                               tolerance_pct=tolerance_pct, tolerance_usd=tolerance_usd, supersedes_id=supersedes_id, entered_by=actor_id)
+                               tolerance_pct=tolerance_pct, tolerance_usd=tolerance_usd, usage_detail=usage_detail, supersedes_id=supersedes_id, entered_by=actor_id)
     session.add(st)
     await session.flush()
     first = await reconcile(session, st, actor_id=actor_id, note=note)
@@ -127,7 +154,7 @@ async def reconcile(session: AsyncSession, st: EvalProviderStatement, *, actor_i
     live = await compare(session, st)
     row = EvalReconciliation(statement_id=st.id, status=live["status"], billed_usd=live["billed_usd"], recorded_usd=live["recorded_usd"], difference_usd=live["difference_usd"],
                              difference_pct=live["difference_pct"], unknown_lines=live["unknown_lines"], line_count=live["line_count"], note=(note or "").strip() or None,
-                             detail={"tokens": live["tokens"], "explanation": live["explanation"], "by_component": live["recorded"]["by_component"], "top_runs": live["recorded"]["top_runs"],
+                             detail={"tokens": live["tokens"], "explanation": live["explanation"], "by_component": live["recorded"]["by_component"], "top_runs": live["recorded"]["top_runs"], "gap_explanation": (live.get("gap") or {}).get("explanation"),
                                      "tolerance_pct": live["tolerance_pct"], "tolerance_usd": live["tolerance_usd"], "allowed_usd": live["allowed_usd"]}, performed_by=actor_id)
     session.add(row)
     await session.flush()

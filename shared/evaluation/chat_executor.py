@@ -70,6 +70,7 @@ class ChatRuntime:
     target: ChatTarget
     meter: Any = None                        # shared.evaluation.usage.UsageMeter
     timeout: float = 120.0
+    turn_guard: Any = None                   # (turn number) -> a reason to stop the conversation before that turn, or None (the runner stops a conversation whose budget ran out)
     extra: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -153,7 +154,7 @@ async def execute_chat_case(case: Dict[str, Any], rt: ChatRuntime, *, execution_
     try:
         convo = await run_conversation(rt.client, chat_url=rt.chat_url, headers=headers, thread_id=thread_id, messages=texts,
                                        confirmations=(case.get("metadata") or {}).get("confirmations", "auto_approve"), on_turn=on_turn,
-                                       timeout=rt.timeout, locale_for_turn=(case.get("metadata") or {}).get("locale"))
+                                       timeout=rt.timeout, locale_for_turn=(case.get("metadata") or {}).get("locale"), stop_before_turn=rt.turn_guard)
     except BaseException:                          # a timeout cancels this task: the runner reads what the ledger shows (UsageMeter.settle_abandoned)
         if rt.meter:
             rt.meter.abandon()
@@ -186,6 +187,8 @@ async def execute_chat_case(case: Dict[str, Any], rt: ChatRuntime, *, execution_
     if usage is not None:
         observation["usage"] = usage.as_dict()
     observation["synthetic_model"] = rt.target.synthetic
+    if convo.stopped:
+        observation["stopped"] = convo.stopped
     return observation
 
 

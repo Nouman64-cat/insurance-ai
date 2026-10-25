@@ -131,6 +131,14 @@ async def active_price_table(session) -> tuple[Optional[uuid.UUID], PriceTable]:
     return row.id, PriceTable.from_rates(row.label, row.rates, fallback=PriceTable.builtin())
 
 
+async def _compute_rates(session) -> List[Dict[str, Any]]:
+    """The recorded hourly machine rates (for a run of a self-hosted model); none when none is recorded, in which case machine time is unknown, never free."""
+    from sqlmodel import select
+    from shared.models.evaluation import EvalComputeRate
+    return [{"name": r.name, "resource": r.resource, "usd_per_hour": r.usd_per_hour, "effective_from": r.effective_from, "source": r.source, "created_at": r.created_at}
+            for r in (await session.exec(select(EvalComputeRate))).all()]
+
+
 async def ingest_run(lake, folder: Path, *, ingested_by: Optional[uuid.UUID] = None) -> IngestReport:
     """Verify a sealed run folder and write it to MinIO and PostgreSQL. Idempotent; see the module docstring."""
     from sqlalchemy import delete
@@ -208,6 +216,7 @@ async def ingest_run(lake, folder: Path, *, ingested_by: Optional[uuid.UUID] = N
         session.add(run)
         await session.flush()
 
+        compute_rates = await _compute_rates(session)
         n_assert = n_metric = 0
         case_costs: Dict[str, Dict[str, Any]] = {}
         all_lines: List[Dict[str, Any]] = []
@@ -219,7 +228,8 @@ async def ingest_run(lake, folder: Path, *, ingested_by: Optional[uuid.UUID] = N
             cost, basis = reprice(usage, table)
             if r["status"] in ("skipped", "blocked") and usage is None:
                 cost, basis = 0.0, COST_BASIS_NONE
-            mine = cost_lines.lines_for_result(run_id, r, table=table, candidate=cfg.get("model_id"), mode=mode, synthetic=bool(cfg.get("synthetic_model")), pricing_version_id=ledger_version)
+            mine = cost_lines.lines_for_result(run_id, r, table=table, candidate=cfg.get("model_id"), mode=mode, synthetic=bool(cfg.get("synthetic_model")), pricing_version_id=ledger_version,
+                                               compute_rates=compute_rates, at=run.started_at)
             all_lines += mine
             artifact = r.get("artifact")
             row = EvalCaseResult(

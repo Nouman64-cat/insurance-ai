@@ -157,7 +157,7 @@ TEMPLATE_DDL = [
 
 
 # Phase 7: cost lines, budgets, exchange rates and provider statements are append-only (a correction is a new row).
-_COST_APPEND_ONLY = ("eval_cost_lines", "eval_budget_limits", "eval_exchange_rates", "eval_provider_statements", "eval_reconciliations")
+_COST_APPEND_ONLY = ("eval_cost_lines", "eval_budget_limits", "eval_exchange_rates", "eval_provider_statements", "eval_reconciliations", "eval_compute_rates")
 EVAL_COST_DDL = [
     ("eval_guard_append_only: function",
      "CREATE OR REPLACE FUNCTION eval_guard_append_only() RETURNS trigger AS $$ "
@@ -172,6 +172,7 @@ EVAL_COST_DDL = [
     ("eval_provider_statements: billed_input_tokens", "ALTER TABLE eval_provider_statements ADD COLUMN IF NOT EXISTS billed_input_tokens bigint"),
     ("eval_provider_statements: billed_output_tokens", "ALTER TABLE eval_provider_statements ADD COLUMN IF NOT EXISTS billed_output_tokens bigint"),
     ("eval_provider_statements: billed_cached_tokens", "ALTER TABLE eval_provider_statements ADD COLUMN IF NOT EXISTS billed_cached_tokens bigint"),
+    ("eval_provider_statements: usage_detail", "ALTER TABLE eval_provider_statements ADD COLUMN IF NOT EXISTS usage_detail jsonb"),
     ("eval_provider_statements: tolerance_pct", "ALTER TABLE eval_provider_statements ADD COLUMN IF NOT EXISTS tolerance_pct double precision NOT NULL DEFAULT 5"),
     ("eval_provider_statements: tolerance_usd", "ALTER TABLE eval_provider_statements ADD COLUMN IF NOT EXISTS tolerance_usd double precision NOT NULL DEFAULT 0.05"),
 ] + [

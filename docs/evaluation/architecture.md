@@ -246,3 +246,51 @@ Model advice only considers configurations with at least 30 executions, a known 
 `/super-admin/evaluation/costs` (a tab of the AI Evaluation Center; `components/costs/*`, data module `lib/evalCosts.ts`). Views, kept in the address (`view`, `cur`, and each view's filters): **Overview** (this month and today against the budgets, what is running with its spend so far, how sure the month's money is, the 30-day chart by component, the provider-bill, attribution, anomaly and advice cards; it refreshes every 6 seconds while a job runs), **Cost vs quality** (per dataset version and mode: pass rate with its interval, reliability, latency, the cost of a passed test, the quality/cost frontier and the advice), **Budgets** (the daily and monthly limits, how to change them with a reason, the history), **Usage records** (every cost line, filterable, CSV download, the attribution check), **Reconciliation** (enter a provider bill, reconcile, replace with a correction, the confirmed / estimated / unknown split), **Findings & advice**, **Exchange rates**. Money is shown in USD, or in a second currency from recorded rates: series totals convert each day at that day's rate (`GET /eval/costs/overview|trends?currency=`), single figures use today's rate and say so; a day with no rate stays in dollars and is reported as unconverted. Rates are recorded with a source and never edited (`GET/POST /eval/costs/rates`); a rate more than 20% away from the previous one is recorded with a warning.
 
 Benchmarking: the setup panel asks `/eval/jobs/estimate` for the estimate AND what the run would do to the day and month limits, shows both, and does not offer Start when an enforced limit would refuse it; the results page shows what the benchmark cost all-in (model, judge, retries, unattributed), per model and per passed test, and links to the cost comparison.
+
+## Phase 8: analytics, the lake and skills on the map, saved views
+
+The Studio (`/super-admin/evaluation`) reads everything from the platform's own records; Phase 8 adds three things to what it already read.
+
+**Analytics** (`GET /eval/studio/analytics`, `services/eval_studio.py::analytics`, pure maths in `shared/evaluation/analytics.py`). Parameters: `days` (1 to 730, default 90), `dataset`, `model` (`no model` selects the checks that call no model), `include_synthetic` (scripted stand-ins are left out unless asked for). It returns, each with the count it rests on:
+
+| key | what it says |
+|---|---|
+| `outcomes` | executions by status, overall and per model; the pass rate counts only executions that produced a verdict (passed or failed); critical failures |
+| `coverage` | per dataset, how many of the newest published version's cases ran at least once in the window |
+| `layers` | per model and layer (L1 inputs, L2 output quality, L3 agent trajectory, L4 workflow and state, L5 security and business rules, L6 performance and cost): how many executions the layer applied to, passed, failed, and the mean score. A layer that did not apply to an execution is left out of that layer; L6 without a limit is a measurement, not a verdict |
+| `routing` | per specialist and per tool: executions that used it, how many of those L3 judged, and how many passed |
+| `latency` | per model: mean, P50, P95, max (percentiles are linear-interpolated, over executions that passed or failed and recorded a latency) |
+| `reliability` | per model, over cases run more than once: share with the same verdict every time, the flaky cases, the cases wrong every time; with fewer than three repeated cases there is no consistency figure rather than a made-up one |
+| `drift` | review items opened per week for 12 weeks, by kind |
+
+`GET /eval/studio/results` takes the same window and, to open the executions behind a figure, `failed_layer` (L1 to L6), `specialist`, `tool` and `days`. The page checks that the count in the list equals the figure it was opened from.
+
+**New nodes.** `lake` (layer 1, Golden data): counts of `eval_storage_objects` by layer and state, published versions, health `bad` when any object is corrupt or missing, a `stores` link to each dataset. `skills` (layer 3): the skills the traces record (`trace_summary.skills`), a `loads` link from the agent; like specialists and tools it exists only as far as runs observed it. There is no node for field mappings: the product has no mapping records.
+
+**Simulate.** The form can set the agent's skills (as configured, on, off; agent mode only), per-execution limits (latency, tokens, cost) and the quality gate with its minimum pass rate. They are sent as `skills`, `max_latency_ms`, `max_tokens`, `max_cost_usd`, `gate`, `gate_min_pass_rate`; the benchmark runner forwards them to each model's run, and each run records them in its config. An execution over a limit fails layer L6; it is not stopped midway.
+
+**Saved views** (`lib/savedViews.ts`, `components/studio/SavedViews.tsx`). A name for a studio address (mode, filters, window, open item), kept in the browser's local storage, newest first, 20 at most, a name used twice replaces the older. They are per viewer and never leave the browser; every storage access is guarded, so a private window shows none and says why a save failed. Only addresses inside the studio are accepted when saving or reading. Every filter is also in the address, so a link to the current page is a deep link.
+
+## Comparing and checking stored runs
+
+`shared/evaluation/run_compare.py` (pure) compares two runs by the OUTCOME of each case across its repetitions: `passed` (every execution that produced a verdict passed), `failed` (at least one failed), `no_verdict` (blocked, skipped or an infrastructure error only). A is the baseline, B the later run: `newly_failing` passed in A and fails in B, `newly_passing` the reverse, `changed` is a verdict gained or lost, cases in only one run are listed and not compared. It gives each run's totals and the differences in pass rate, cost (only when both costs are complete), P50 and P95 latency, and notes when the runs differ in dataset, version, model or judge ("not like for like").
+
+`shared/evaluation/run_tools.py` reads the database and the lake: `compare(a, b)` for two complete runs, `verify(run)` which re-reads every object stored for the run, compares the bytes with the checksum and size recorded when it was ingested, and checks that every result row is there. Both raise `RunToolError` with an HTTP status, which the router and the CLI turn into a response and a message.
+
+| call | what it does |
+|---|---|
+| `GET /eval/runs/compare?a=&b=` | the comparison (422 for the same run twice, 404 for an unknown run, 409 for a run still being ingested) |
+| `GET /eval/runs/{id}/report` | the run's text report as stored |
+| `GET /eval/runs/{id}/artifacts/{name}` | one stored file; refused (409) if its bytes no longer match the recorded checksum |
+| `eval_lake_cli.py run-verify <id>` | the verification above; exit status 1 when anything differs |
+| `eval_lake_cli.py run-compare <a> <b>` | the comparison as text |
+
+In the Studio: Investigate > Compare runs (list of stored runs, choose A and B), and a run's executions page opens with its summary.
+
+### A conversation and the budget
+
+Before a case starts, the runner checks that the run's budget covers an estimate for all its turns. Between turns it asks again (`Runner._turn_guard`): money already spent, plus the estimate for the turns this conversation has had, plus the next turn. If it does not fit the conversation stops there: `blocked`, reason `budget_exceeded`, nothing judged, the finished turns' usage kept. This matters when other cases running at the same time have spent the budget in the meantime. A scripted model costs nothing and is never stopped.
+
+### The judge and unknown metric names
+
+A case may ask for correctness, task_completion, faithfulness, relevance, hallucination, safety or custom. A name outside that list is not sent to the judge service (which would score it as a generic criterion under the wrong name); it is recorded as unscored with the reason.
