@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { tx } from "@/lib/i18n/tx";
 import {
   ArchiveEntry, ArchiveJob, ArchiveStatus, ArchiveVerificationResult, ArchivedEvent, CleanupPartition, JOB_LABEL, Retrieval, RetrievalCriteria, Tone,
@@ -125,6 +126,7 @@ export default function ArchivePanel({ chainId, isSuperAdmin }: { chainId: strin
 
   return (
     <section aria-label={tx("Archive & retention")} className="rounded-xl border border-slate-200 bg-white shadow-sm">
+      {isSuperAdmin && <div className="border-b border-slate-100 px-4 py-3 text-right"><Link href="/super-admin/audit-configuration" className="text-xs font-semibold text-blue-600">Configure archive and cleanup settings →</Link></div>}
       <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} className="flex w-full items-center justify-between px-4 py-3 text-left">
         <span>
           <span className="block text-sm font-semibold text-slate-900">{tx("Archive & retention")}</span>

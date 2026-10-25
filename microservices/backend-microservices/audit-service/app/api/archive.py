@@ -19,6 +19,7 @@ from sqlalchemy import text
 
 from app import db
 from app.archive import evidence as evidence_pkg, policy as pol, repository as repo
+from app.archive import configuration as runtime_configuration
 from app.archive.cleanup import CleanupService
 from app.archive.retrieval import RetrievalError, retrieval_to_api
 from app.archive.store import StoreError
@@ -34,7 +35,11 @@ router = APIRouter(prefix="/v1/archive", tags=["Archive & retention"])
 CLEANUP_CONFIRMATION = "REMOVE-HOT-PARTITIONS"
 
 
-def _services(request: Request):
+async def _services(request: Request):
+    runtime = getattr(request.app.state, "archive_runtime", None)
+    if runtime is not None:
+        _, _, services = await runtime.snapshot()
+        return services
     services = getattr(request.app.state, "archive", None)
     if services is None:
         raise HTTPException(503, "Archiving is not enabled on this installation.")
@@ -75,19 +80,39 @@ async def record_access(identity: Identity, action: str, entity_type: str, entit
         raise HTTPException(503, "The action could not be recorded in the audit trail, so it was not performed.")
 
 
+@router.get("/config", summary="SuperAdmin audit runtime configuration")
+async def configuration(identity: Identity = Depends(current_identity)):
+    _super(identity)
+    return runtime_configuration.public(await runtime_configuration.read())
+
+
+@router.put("/config", summary="Save and apply audit runtime configuration without restarting")
+async def update_configuration(body: runtime_configuration.ArchiveUpdate, request: Request, identity: Identity = Depends(current_identity)):
+    _super(identity)
+    row = await runtime_configuration.update(body, identity)
+    runtime = getattr(request.app.state, "archive_runtime", None)
+    if runtime is not None:
+        runtime.changed.set()
+    return runtime_configuration.public(row)
+
+
 # ── overview ──────────────────────────────────────────────────────────────────────────────────────────────────
 @router.get("/status", summary="Archive & retention overview")
 async def status(request: Request, identity: Identity = Depends(current_identity)):
     scope = scope_for(identity)
     tenant = None if scope.unrestricted else str(scope.tenant_id)
     services = getattr(request.app.state, "archive", None)
+    runtime = getattr(request.app.state, "archive_runtime", None)
+    effective = settings
+    if runtime is not None:
+        _, effective, services = await runtime.snapshot()
     out: dict = {
-        "enabled": services is not None and settings.archiving_enabled, "server_time": format_timestamp(datetime.now(timezone.utc)),
-        "config": {"hot_retention_months": settings.hot_retention_months, "schedule": settings.archive_schedule, "compression": settings.archive_compression,
-                   "encryption": "AES-256-GCM (chunked, per-archive data key, wrapped by the master key)", "storage_provider": settings.archive_storage_provider,
-                   "bucket": settings.archive_bucket, "auto_hot_cleanup": settings.auto_hot_cleanup, "cleanup_mode": settings.cleanup_mode,
-                   "cleanup_safety_days": settings.cleanup_safety_days, "object_lock_mode": settings.lock_mode, "object_lock_days": settings.lock_days,
-                   "test_mode": settings.archive_test_mode},
+        "enabled": services is not None and effective.archiving_enabled, "server_time": format_timestamp(datetime.now(timezone.utc)),
+        "config": {"hot_retention_months": effective.hot_retention_months, "schedule": effective.archive_schedule, "compression": effective.archive_compression,
+                   "encryption": "AES-256-GCM (chunked, per-archive data key, wrapped by the master key)", "storage_provider": effective.archive_storage_provider,
+                   "bucket": effective.archive_bucket, "auto_hot_cleanup": effective.auto_hot_cleanup, "cleanup_mode": effective.cleanup_mode,
+                   "cleanup_safety_days": effective.cleanup_safety_days, "object_lock_mode": effective.lock_mode, "object_lock_days": effective.lock_days,
+                   "test_mode": effective.archive_test_mode},
         "storage": None, "master_key": None, "hot": None, "partitions": None,
     }
     async with db.engine().connect() as conn:
@@ -96,7 +121,7 @@ async def status(request: Request, identity: Identity = Depends(current_identity
         out["failed_jobs"] = await repo.list_jobs(conn, tenant, scope.unrestricted, ["FAILED"], 20)
         out["recent_jobs"] = await repo.list_jobs(conn, tenant, scope.unrestricted, None, 10)
         out["holds"] = await repo.list_holds(conn, tenant, scope.unrestricted, active_only=True)
-        out["policies"] = await _effective_policies(conn, tenant)
+        out["policies"] = await _effective_policies(conn, tenant, effective)
         clause, params = ("", {}) if scope.unrestricted else ("WHERE tenant_id = CAST(:t AS uuid)", {"t": tenant})
         hot = (await conn.execute(text(f"SELECT count(*) AS n, min(occurred_at) AS first_at, min(recorded_at) AS first_rec, max(recorded_at) AS last_rec FROM events {clause}"), params)).mappings().one()
         out["hot"] = {"events": hot["n"], "oldest_event_at": format_timestamp(hot["first_at"]) if hot["first_at"] else None,
@@ -114,9 +139,9 @@ async def status(request: Request, identity: Identity = Depends(current_identity
     return out
 
 
-async def _effective_policies(conn, tenant: Optional[str]) -> list[dict]:
+async def _effective_policies(conn, tenant: Optional[str], effective=settings) -> list[dict]:
     rows = await repo.policy_rows(conn, tenant)
-    resolved = pol.resolve(rows, settings.hot_retention_months)
+    resolved = pol.resolve(rows, effective.hot_retention_months)
     return [{"category": c, "hot_retention_months": p.hot_retention_months, "cold_retention_years": p.cold_retention_years, "allow_hot_cleanup": p.allow_hot_cleanup,
              "approved": p.approved, "scope": "tenant" if p.tenant_id else "platform default"} for c, p in resolved.items()]
 
@@ -151,7 +176,7 @@ class VerifyBody(BaseModel):
 
 @router.post("/verify", summary="Verify an archive: manifest signature, checksum and (deep) every event hash")
 async def verify(body: VerifyBody, request: Request, identity: Identity = Depends(current_identity)):
-    services = _services(request)
+    services = await _services(request)
     row = await _entry(body.archive_id, identity)
     async with db.engine().connect() as conn:
         env = str((await conn.execute(text("SELECT environment_id FROM environment"))).scalar_one())
@@ -183,7 +208,7 @@ async def verify_chain(body: ChainBody, identity: Identity = Depends(current_ide
 
 @router.get("/catalog/{archive_id}/evidence", summary="Download an evidence package for external verification")
 async def evidence(archive_id: str, request: Request, include_data: bool = Query(False), identity: Identity = Depends(current_identity)):
-    services = _services(request)
+    services = await _services(request)
     row = await _entry(archive_id, identity)
     tenant = str(row["tenant_id"]) if row["tenant_id"] else None
     async with db.engine().connect() as conn:
@@ -240,7 +265,7 @@ async def job(job_id: str, identity: Identity = Depends(current_identity)):
 @router.post("/jobs/{job_id}/retry", summary="Retry a failed job now")
 async def retry_job(job_id: str, request: Request, identity: Identity = Depends(current_identity)):
     _super(identity)
-    _services(request)
+    await _services(request)
     async with db.transaction() as conn:
         ok = await repo.request_retry(conn, job_id, datetime.now(timezone.utc))
     if not ok:
@@ -258,7 +283,9 @@ class PlanBody(BaseModel):
 @router.post("/run", summary="Plan archiving now (dry run by default); jobs then run in the background")
 async def run(body: PlanBody, request: Request, identity: Identity = Depends(current_identity)):
     _super(identity)
-    services = _services(request)
+    services = await _services(request)
+    if not services.worker.config.archiving_enabled:
+        raise HTTPException(409, "Archiving is disabled in Audit Configuration.")
     planned = await services.worker.plan(trigger="MANUAL", requested_by=identity.requester, dry_run=body.dry_run, chain_id=body.chain_id)
     await record_access(identity, "archive.run_requested", "archive_run", None, None, {"dry_run": body.dry_run, "planned": len(planned)})
     if not body.dry_run and planned:
@@ -285,7 +312,7 @@ class RetrievalBody(BaseModel):
 
 @router.post("/retrievals", status_code=202, summary="Request archived events (restored to a staging area, never into the live chain)")
 async def request_retrieval(body: RetrievalBody, request: Request, identity: Identity = Depends(current_identity)):
-    services = _services(request)
+    services = await _services(request)
     scope = scope_for(identity)
     try:
         result = await services.retrieval.request(tenant_id=None if scope.unrestricted else str(scope.tenant_id), unrestricted=scope.unrestricted,
@@ -349,11 +376,13 @@ async def retrieval_events(retrieval_id: str, page: int = Query(1, ge=1, le=1000
 
 # ── retention policies ────────────────────────────────────────────────────────────────────────────────────────
 @router.get("/policies", summary="Retention policies (current, and their history)")
-async def policies(history: bool = Query(False), identity: Identity = Depends(current_identity)):
+async def policies(request: Request, history: bool = Query(False), identity: Identity = Depends(current_identity)):
     scope = scope_for(identity)
     tenant = None if scope.unrestricted else str(scope.tenant_id)
+    runtime = getattr(request.app.state, "archive_runtime", None)
+    effective = (await runtime.snapshot())[1] if runtime else settings
     async with db.engine().connect() as conn:
-        out = {"effective": await _effective_policies(conn, tenant), "categories": list(pol.CATEGORIES),
+        out = {"effective": await _effective_policies(conn, tenant, effective), "categories": list(pol.CATEGORIES),
                "note": "Defaults keep archives indefinitely and are NOT legal retention periods: compliance must approve real periods."}
         if history:
             out["history"] = await repo.policy_history(conn, tenant, scope.unrestricted)
@@ -451,8 +480,8 @@ async def release_hold(hold_id: str, body: ReleaseBody, identity: Identity = Dep
 @router.get("/cleanup/plan", summary="Which monthly partitions could leave hot storage, and what blocks the others (SuperAdmin)")
 async def cleanup_plan(request: Request, identity: Identity = Depends(current_identity)):
     _super(identity)
-    services = _services(request)
-    return {"partitions": await services.cleanup.analyse(), "automatic": settings.auto_hot_cleanup, "mode": settings.cleanup_mode}
+    services = await _services(request)
+    return {"partitions": await services.cleanup.analyse(), "automatic": services.cleanup.config.auto_hot_cleanup, "mode": services.cleanup.config.cleanup_mode}
 
 
 class CleanupBody(BaseModel):
@@ -467,10 +496,10 @@ class CleanupBody(BaseModel):
 @router.post("/cleanup", summary="Remove fully archived monthly partitions from hot storage (dry run by default; SuperAdmin)")
 async def cleanup(body: CleanupBody, request: Request, identity: Identity = Depends(current_identity)):
     _super(identity)
-    services = _services(request)
+    services = await _services(request)
     if not body.dry_run and body.confirm != CLEANUP_CONFIRMATION:
         raise HTTPException(422, f"A real cleanup must be confirmed: send confirm={CLEANUP_CONFIRMATION!r}.")
-    if body.mode == "drop" and not body.dry_run and not settings.auto_hot_cleanup and body.confirm != CLEANUP_CONFIRMATION:
+    if body.mode == "drop" and not body.dry_run and not services.cleanup.config.auto_hot_cleanup and body.confirm != CLEANUP_CONFIRMATION:
         raise HTTPException(422, "drop is irreversible; confirm it explicitly.")
     promotions = await services.cleanup.promote(requested_by=identity.requester, ignore_safety_period=body.ignore_safety_period) if body.promote and not body.dry_run else []
     result = await services.cleanup.remove(dry_run=body.dry_run, mode=body.mode, requested_by=identity.requester)

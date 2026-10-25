@@ -124,6 +124,11 @@ class CleanupService:
         report = await self.analyse()
         removed = []
         for item in report:
+            if requested_by == "archive-scheduler" and hasattr(self, "runtime_read"):
+                current = await self.runtime_read()
+                controls = current["settings"]
+                if current["revision"] != self.configuration_revision or not controls["archiving_enabled"] or not controls["auto_hot_cleanup"]:
+                    break
             if item["status"] != "REMOVABLE":
                 continue
             if dry_run:

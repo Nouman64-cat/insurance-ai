@@ -3,6 +3,7 @@
 import { displayDate } from '../../../lib/dateDisplay';
 import { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
+import DocumentForgeryCosts from "@/components/DocumentForgeryCosts";
 import api from "@/app/services/api";
 import { tx } from "@/lib/i18n/tx";
 import { appHref } from "@/lib/appLinks";
@@ -317,6 +318,8 @@ function TokenManagementContent() {
   const defaultStartDate = new Date();
   defaultStartDate.setDate(defaultEndDate.getDate() - 6);
   
+  const [activeTab, setActiveTab] = useState("overview");
+  useEffect(() => {if (new URLSearchParams(window.location.search).get("tab") === "document-forgery") setActiveTab("document-forgery");}, []);
   const [startDate, setStartDate] = useState(defaultStartDate.toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState(defaultEndDate.toISOString().split('T')[0]);
 
@@ -588,6 +591,11 @@ function TokenManagementContent() {
         </div>
       </div>
 
+      <nav aria-label="Token Economy sections" className="flex flex-wrap gap-2 border-b border-slate-200 pb-3">
+        <button onClick={() => setActiveTab("overview")} aria-pressed={activeTab === "overview"} className={`rounded-lg px-4 py-2 text-sm font-semibold ${activeTab === "overview" ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"}`}>{tx("Model economy")}</button>
+        <button onClick={() => setActiveTab("document-forgery")} aria-pressed={activeTab === "document-forgery"} className={`rounded-lg px-4 py-2 text-sm font-semibold ${activeTab === "document-forgery" ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"}`}>{tx("Document Forgery Detection")}</button>
+      </nav>
+      {activeTab === "document-forgery" ? <DocumentForgeryCosts startDate={startDate} endDate={endDate} /> : <>
       {/* FinOps Cost Optimization Banner */}
       <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 rounded-xl p-5 text-white shadow-md border border-slate-800">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -1125,6 +1133,7 @@ function TokenManagementContent() {
           </div>
         </>
       )}
+      </>}
     </div>
   );
 }

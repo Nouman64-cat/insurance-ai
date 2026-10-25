@@ -166,6 +166,7 @@ services:
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
       AWS_REGION: ${AWS_REGION}
       S3_BUCKET_NAME: ${S3_BUCKET_NAME}
+      DOCS_FORGERY_URL: ${DOCS_FORGERY_URL:-http://docs-forgery:8022}
       OCR_ENGINE_URL: http://ocr-engine:8004
       RISK_ENGINE_URL: http://risk-engine:8002
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
@@ -267,6 +268,84 @@ services:
     volumes:
       - ./microservices/backend-microservices/ocr-engine:/app
       - ./shared/documents:/data # Required for the /extract-from-path endpoint
+
+  docs-forgery:
+    <<: *fastapi-defaults
+    build:
+      context: ./microservices/backend-microservices/docs-forgery
+      dockerfile: Dockerfile
+    container_name: insurance-docs-forgery
+    env_file:
+      - path: .env.docs-forgery # Private to this service; no shared database-owner credentials
+        required: false
+    environment:
+      DOCS_FORGERY_DATABASE_URL: ${DOCS_FORGERY_DATABASE_URL:-}
+      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET:-}
+      TENANT_SERVICE_URL: http://tenant-service:8001
+      WATCHFILES_FORCE_POLLING: "true"
+      PIXEL_PYTHON: /opt/pixel-venv/bin/python
+      TRUFOR_DIR: /opt/trufor
+      OMP_NUM_THREADS: "2"
+      MKL_NUM_THREADS: "2"
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8022", "--reload"]
+    ports:
+      - "127.0.0.1:8032:8022"
+    volumes:
+      - ./microservices/backend-microservices/docs-forgery:/app
+    depends_on:
+      tenant-service:
+        condition: service_started # SuperAdmin policy and usage ledger
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8022/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # Explicit one-off DDL job. Owner credentials are never injected into the docs-forgery runtime.
+  docs-forgery-provision:
+    profiles: ["tools"]
+    image: insurance-ai-docs-forgery
+    restart: "no"
+    networks: [insurance-net]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    env_file:
+      - .env
+      - path: .env.docs-forgery
+        required: false
+    volumes:
+      - ./microservices/backend-microservices/docs-forgery:/app
+    command: ["python", "scripts/provision_results.py"]
+
+  # Legacy entrypoint linking to the authenticated Admin workspace.
+  forgery-detection-app:
+    build:
+      context: ./microservices/frontend-microservices/forgery-detection-app
+      dockerfile: Dockerfile
+      target: dev
+    container_name: insurance-forgery-detection-app
+    restart: unless-stopped
+    networks:
+      - insurance-net
+    ports:
+      - "3012:3012"
+    volumes:
+      - ./microservices/frontend-microservices/forgery-detection-app:/app
+      - /app/node_modules
+      - /app/.next
+    environment:
+      PORTAL_URL: http://localhost:3000
+      WATCHPACK_POLLING: "true"
+      NEXT_TELEMETRY_DISABLED: "1"
+    depends_on:
+      docs-forgery:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3012/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
 
   # khalid
   text-summarizer:
@@ -451,15 +530,9 @@ services:
       AUDIT_CHECKPOINT_EVENT_THRESHOLD: ${AUDIT_CHECKPOINT_EVENT_THRESHOLD:-500}
       AUDIT_CHECKPOINT_INTERVAL_SECONDS: ${AUDIT_CHECKPOINT_INTERVAL_SECONDS:-900}
       AUDIT_CHECKPOINT_DIRECTORY: /var/lib/audit-checkpoints
-      AUDIT_ENVIRONMENT_LABEL: ${AUDIT_ENVIRONMENT_LABEL:-local-dev}
       AUDIT_TRUST_ANCHOR_FINGERPRINT: ${AUDIT_TRUST_ANCHOR_FINGERPRINT:-}
       # Stage 3: archive and retention. MinIO identities are least-privilege (writer: no delete; reader: read-only); the root account is not here.
-      AUDIT_ARCHIVING_ENABLED: ${AUDIT_ARCHIVING_ENABLED:-true}
-      AUDIT_HOT_RETENTION_MONTHS: ${AUDIT_HOT_RETENTION_MONTHS:-6}
-      AUDIT_ARCHIVE_SCHEDULE: ${AUDIT_ARCHIVE_SCHEDULE:-monthly}
-      AUDIT_ARCHIVE_COMPRESSION: ${AUDIT_ARCHIVE_COMPRESSION:-zstd}
       AUDIT_ARCHIVE_STORAGE_PROVIDER: ${AUDIT_ARCHIVE_STORAGE_PROVIDER:-minio}
-      AUDIT_AUTO_HOT_CLEANUP: ${AUDIT_AUTO_HOT_CLEANUP:-false}
       AUDIT_ARCHIVE_S3_ENDPOINT: ${AUDIT_ARCHIVE_S3_ENDPOINT:-http://minio:9000}
       AUDIT_ARCHIVE_BUCKET: ${AUDIT_ARCHIVE_BUCKET:-insurance-audit-archive}
       AUDIT_ARCHIVE_WRITER_KEY: ${AUDIT_ARCHIVE_WRITER_KEY:-}
@@ -468,14 +541,7 @@ services:
       AUDIT_ARCHIVE_READER_SECRET: ${AUDIT_ARCHIVE_READER_SECRET:-}
       AUDIT_ARCHIVE_KEY_DIRECTORY: /run/audit-archive-keys
       AUDIT_ARCHIVE_WORK_DIRECTORY: /var/lib/audit-archive-work
-      AUDIT_ARCHIVE_LOCK_MODE: ${AUDIT_ARCHIVE_LOCK_MODE:-GOVERNANCE}
-      AUDIT_ARCHIVE_LOCK_DAYS: ${AUDIT_ARCHIVE_LOCK_DAYS:-30}
-      AUDIT_ARCHIVE_INTERVAL_SECONDS: ${AUDIT_ARCHIVE_INTERVAL_SECONDS:-300}
-      AUDIT_CLEANUP_MODE: ${AUDIT_CLEANUP_MODE:-detach}
-      AUDIT_CLEANUP_SAFETY_DAYS: ${AUDIT_CLEANUP_SAFETY_DAYS:-7}
-      # Development only (refused unless AUDIT_ENVIRONMENT_LABEL=local-dev): archive anything older than N seconds instead of the month window.
-      AUDIT_ARCHIVE_TEST_MODE: ${AUDIT_ARCHIVE_TEST_MODE:-false}
-      AUDIT_ARCHIVE_TEST_HOT_SECONDS: ${AUDIT_ARCHIVE_TEST_HOT_SECONDS:-120}
+      # Archive controls are persisted and managed in SuperAdmin Audit Configuration.
     depends_on:
       kafka:
         condition: service_healthy
@@ -492,7 +558,7 @@ services:
 
   # ── MinIO AIStor Free: cold storage for archived audit events (Stage 3) ──────────────────────────────────
   # Single-node AIStor Free, pinned to an exact release. It needs a FREE LICENSE FILE that stays outside the repository: download it from
-  # MinIO and point AISTOR_LICENSE_FILE (in .env) at it, e.g. /home/<you>/.config/insurance-ai/minio.license (chmod 600). Without it the
+  # MinIO and set AISTOR_LICENSE_KEY in .env, or mount a real file via AISTOR_LICENSE_FILE. Started by the default Compose command. Without a license the
   # container refuses to start with an explanatory message. Reachable only from the Docker network and from localhost (ports bound to
   # 127.0.0.1). The bucket is private, versioned and Object-Lock-enabled; the application uses separate writer and reader identities.
   minio:
@@ -500,9 +566,10 @@ services:
     container_name: insurance-minio
     restart: unless-stopped
     networks: [insurance-net]
-    # Refuse to start without explicit root credentials and a license rather than silently using a default account or a trial.
-    entrypoint: ["/bin/sh", "-c", "test -n \"$$MINIO_ROOT_USER\" -a \"$${#MINIO_ROOT_PASSWORD}\" -ge 16 || { echo 'MINIO_ROOT_USER and a MINIO_ROOT_PASSWORD of 16+ characters must be set in .env' >&2; exit 1; }; test -s /run/license/minio.license || { echo 'AIStor Free license file missing: set AISTOR_LICENSE_FILE in .env to the license file downloaded from MinIO (see README, Stage 3)' >&2; exit 1; }; exec minio server /data --address :9000 --console-address :9001 --license /run/license/minio.license"]
+    # The wrapper materializes an env license key inside the container; file mode also remains available.
+    entrypoint: ["/bin/sh", "/init/start.sh"]
     environment:
+      AISTOR_LICENSE_KEY: ${AISTOR_LICENSE_KEY:-}
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-}
     ports:
@@ -510,7 +577,13 @@ services:
       - "127.0.0.1:9001:9001"   # web console
     volumes:
       - aistor-data:/data
-      - ${AISTOR_LICENSE_FILE:-/dev/null}:/run/license/minio.license:ro
+      - ./infrastructure/minio/start.sh:/init/start.sh:ro
+      - type: bind
+        source: ${AISTOR_LICENSE_FILE:-./infrastructure/minio/license-empty}
+        target: /run/license/minio.license
+        read_only: true
+        bind:
+          create_host_path: false # a typo must not create a directory instead of a license file
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:9000/minio/health/live"]
       interval: 10s

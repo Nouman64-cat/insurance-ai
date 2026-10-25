@@ -143,6 +143,7 @@ insurance-ai/
 │   │   ├── underwriting-app/     # Next.js Underwriting Workbench (queue, case workspace), own container, :3005
 │   │   ├── request-management-app/ # Next.js Request Management app, :3007 (run separately)
 │   │   ├── customer-service-app/ # Next.js Customer Service desk, :3008
+│   │   ├── forgery-detection-app/ # Legacy link to protected Admin workspace, :3012
 │   │   ├── claims-manager-app/   # Next.js Claims Manager app, :3011
 │   │   ├── customer-portal/      # Next.js customer self-service portal
 │   │   ├── marketing-site/       # Next.js public marketing site (demo content, :3002)
@@ -152,6 +153,7 @@ insurance-ai/
 │       ├── tenant-service/
 │       ├── risk-engine/
 │       ├── chat-agent/
+│       ├── docs-forgery/          # FastAPI document manipulation analysis, :8032
 │       ├── ocr-engine/
 │       ├── text-summarizer/
 │       ├── customer-management/  # FastAPI customer portal back end
@@ -301,12 +303,23 @@ the manual end-to-end guide.
 **Archive & cold storage (Stage 3).** Events older than the hot window (default 6 months) are moved by the Audit Service into **compressed (zstd), encrypted (AES-256-GCM) and signed**
 archives in a local **MinIO AIStor Free** bucket (private, versioned, Object Lock). They stay searchable and verifiable (Audit Trail → **Archive & retention**), retention policies
 and legal holds are configurable, and only fully archived, re-verified months can be removed from PostgreSQL (a separate, confirmed step; automatic cleanup is off by default).
-One-time per installation, with the AIStor Free license file kept **outside** the repository:
+**[SuperAdmin → Audit Configuration](http://localhost:3000/super-admin/audit-configuration)** manages retention, scheduling, compression, cleanup, object locks, environment label and local test mode. Changes are persisted and audited, apply to new requests immediately, and reach idle archive workers within five seconds without a restart. Jobs retain their saved settings on retry; explicit category/tenant retention policies override the global default.
 
+MinIO and its initialization job start with `docker compose up -d --build`. After MinIO becomes healthy, initialization creates missing buckets and identities. Existing buckets and their data are preserved; versioning and private access are reapplied. The evaluation bucket is configured when `EVAL_LAKE_ACCESS_KEY` is set. Configure the license and storage credentials in `.env` before starting.
+
+Set your AIStor license string in the ignored root `.env`:
+
+```dotenv
+AISTOR_LICENSE_KEY='paste-your-license-key-here'
+AISTOR_LICENSE_FILE=
+```
+
+The startup wrapper writes the key to a private temporary file inside the container, then passes that file to AIStor. Do not commit or paste the license into chat. Alternatively, leave `AISTOR_LICENSE_KEY` blank and set `AISTOR_LICENSE_FILE` to an existing license file on this host. Do not use another machine's `/home/...` path. Keep `AISTOR_LICENSE_FILE` blank in key mode so Docker does not attempt the old host-file mount.
+
+One-time setup:
 ```bash
-# .env: MINIO_ROOT_USER, MINIO_ROOT_PASSWORD (16+ chars), AUDIT_ARCHIVE_WRITER_KEY/SECRET, AUDIT_ARCHIVE_READER_KEY/SECRET, AISTOR_LICENSE_FILE=<path to your license file>
-docker compose up -d minio
-docker compose run --rm minio-init            # private bucket + Object Lock + least-privilege identities (idempotent)
+# .env: MINIO_ROOT_USER, MINIO_ROOT_PASSWORD (16+ chars), AUDIT_ARCHIVE_WRITER_KEY/SECRET, AUDIT_ARCHIVE_READER_KEY/SECRET, AISTOR_LICENSE_KEY=<your license string> (AISTOR_LICENSE_FILE blank)
+docker compose up -d --build                 # includes MinIO and automatic, idempotent bucket initialization
 docker compose run --rm audit-archive-init    # archive master key, created once; back it up separately
 docker compose up -d audit-service audit-signer
 docker compose exec audit-service python -m app.archive.cli status
@@ -475,6 +488,8 @@ A physical device must use an address reachable from the device rather than `loc
 | Risk Engine     | http://localhost:8012 |
 | Decision Engine | http://localhost:8013 |
 | OCR Engine      | http://localhost:8014 |
+| Document Forensics | http://localhost:8032/docs |
+| Admin Document Intelligence | http://localhost:3000/admin/document-intelligence |
 | Text Summarizer | Internal Docker service `text-summarizer:8005`, via the authenticated API Gateway |
 | Chat Agent      | http://localhost:8016 |
 | Customer Service App | http://localhost:3008 |
@@ -549,3 +564,32 @@ The underwriting rules currently included in the repository are engineering/demo
 In `ENV_VAR=demo`, tenant Admin users can use **Fill demo data** in Customer Service to add eight
 clearly marked sample tickets with replies, internal notes, and overdue examples. Repeated fills do not
 duplicate or overwrite tickets. Samples do not link to or modify real customer/policy records.
+
+## Document Intelligence (Admin)
+
+Sign in as a tenant **Admin**, then open **Admin → [Document Intelligence](http://localhost:3000/admin/document-intelligence)**. Upload a document, select the permitted analysis layers and review or download the report. **Saved analyses** lists your organisation's history and reopens stored reports. This page is for tenant Admins; SuperAdmins retain the separate configuration and costing controls.
+
+The old port 3012 workspace now links to the Admin portal. Its upload and performance proxy endpoints return 401. The detection engine requires `X-Internal-Secret` for analysis and metrics; browser clients never receive that secret. The portal forwards the user's JWT through API Gateway, and tenant-service checks role, active account and tenant ownership before analysis or history access.
+
+```sh
+docker compose build tenant-service api-gateway frontend docs-forgery forgery-detection-app
+docker compose up -d tenant-service api-gateway frontend docs-forgery forgery-detection-app
+```
+
+The shared nonempty `INTERNAL_API_SECRET` is required in `.env`. Results are owned by docs-forgery in the `docs_forgery` schema of the same database; run the explicit [schema provisioning/migration](microservices/backend-microservices/docs-forgery/docs/SCHEMA_OWNERSHIP.md#provisioning-and-migration) before starting analysis. The detection runtime and TruFor weights remain in the docs-forgery image. Automatic analysis of other document uploads is not connected.
+
+### Saved reports
+
+PostgreSQL table `docs_forgery.document_intelligence_results` stores the tenant, uploading admin, filename, SHA-256, file size, requested options, timestamps, status, verdict and complete report JSON, including findings, evidence, heatmaps and performance measurements. Original document bytes are not retained. Analyses are recorded before execution and are marked completed, incomplete or failed; success is returned only after the report is committed. Interrupted service processes can leave a processing record; check history before retrying. Retention follows database backup/administration policies; there is no automatic report deletion.
+
+History queries and report downloads are restricted to the signed-in Admin's tenant. The API never accepts a browser-supplied tenant ID. API routes are `POST /document-intelligence/analyze`, `GET /document-intelligence/results`, and `GET /document-intelligence/results/{id}` through API Gateway. The main UI uses authenticated same-origin proxies under `/api/document-intelligence/`.
+
+### Configuration, costing and metrics
+
+SuperAdmins select the dedicated forgery vision model and token rates under **[LLM Configuration](http://localhost:3000/super-admin/llm-config)**, reusing the encrypted provider keys stored there. Docs-forgery does not use environment provider keys or inherit chat/OCR models. SuperAdmins manage thresholds, enabled layers, page/time limits and local pixel rates under **[Document Forgery Detection](http://localhost:3000/super-admin/document-forgery)**. Costs appear in **[Token Economy → Document Forgery Detection](http://localhost:3000/super-admin/tokens?tab=document-forgery)**. Rates are snapshotted per analysis; blank means unpriced. Model tokens and local inference time are costed separately, and usage records include tenant attribution.
+
+The **[SuperAdmin performance dashboard](http://localhost:3000/super-admin/document-forgery/performance)** preserves runtime metrics and labelled quality report import. Runtime metrics are process-local and reset on restart. See [metric definitions and benchmarks](microservices/backend-microservices/docs-forgery/docs/PERFORMANCE_METRICS.md). Synthetic checks test functionality and do not establish detection accuracy.
+
+The [engine README](microservices/backend-microservices/docs-forgery/README.md) documents its API and limitations. Pixel thresholds remain provisional; reports provide evidence for human review, and `no_evidence` does not establish authenticity.
+
+Service APIs, credentials, database roles and tenant RLS are explained in [Schema ownership and secure communication](microservices/backend-microservices/docs-forgery/docs/SCHEMA_OWNERSHIP.md). Central settings/costs stay in tenant-service; results are read and written only by docs-forgery.

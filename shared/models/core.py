@@ -2343,7 +2343,9 @@ class LLMProviderConfig(SQLModel, table=True):
 class LLMTaskModel(SQLModel, table=True):
     """A model chosen for one task instead of the platform defaults.
 
-    Tasks: "ocr" (the OCR engine and in-process document reading; roles
+    "document_forgery" uses one explicit primary model with input/output USD rates
+    in settings; no configured row means content analysis is unavailable.
+    Other tasks: "ocr" (the OCR engine and in-process document reading; roles
     "primary" | "fallback") and "live_voice" (the realtime voice conversation;
     one "primary" row, OpenAI only, with the voice and transcription model in
     `settings`). The row names a provider and a model only: the API key is the
@@ -4059,3 +4061,20 @@ class AuditOutbox(SQLModel, table=True):
     published_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
     publish_attempts: int = Field(default=0, sa_column=Column(Integer, nullable=False, server_default="0"))
     last_error: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+
+
+class DocumentForgeryConfig(SQLModel, table=True):
+    """Platform singleton, validated by the SuperAdmin configuration API."""
+    __tablename__ = "document_forgery_config"
+    id: str = Field(default="default", primary_key=True, max_length=40)
+    settings: dict = Field(sa_column=Column(JSONB, nullable=False))
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    updated_by: Optional[UUID] = Field(default=None)
+
+
+class DocumentForgeryUsage(SQLModel, table=True):
+    """One metered analysis; no document contents. Rates are snapshotted at execution."""
+    __tablename__ = "document_forgery_usage"
+    id: UUID = Field(primary_key=True)
+    details: dict = Field(sa_column=Column(JSONB, nullable=False))
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True, nullable=False)

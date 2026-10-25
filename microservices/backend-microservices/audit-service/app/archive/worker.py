@@ -17,6 +17,7 @@ Safety properties:
   * failures never discard anything: the job parks as FAILED with the state to resume from, an alert is raised, retries back off.
 """
 import asyncio
+import copy
 import json
 import logging
 import os
@@ -128,7 +129,9 @@ class ArchiveWorker:
             for item in planned:
                 async with db.transaction() as conn:
                     job = await repo.create_job(conn, chain_id=item.chain_id, tenant_id=item.tenant_id, number=item.archive_number, start=item.start_sequence,
-                                                end=item.end_sequence, trigger=trigger, requested_by=requested_by, plan=item.to_api())
+                                                end=item.end_sequence, trigger=trigger, requested_by=requested_by, plan={**item.to_api(),
+                                                    "runtime_settings": self._runtime_settings(),
+                                                    "configuration_revision": getattr(self, "configuration_revision", None)})
                 item.job_id = str(job["job_id"]) if job else None
         async with db.transaction() as conn:
             run_id = await repo.start_run(conn, trigger, dry_run, requested_by)
@@ -158,10 +161,26 @@ class ArchiveWorker:
             due = await repo.due_jobs(conn, self.clock(), limit)
         outcomes = []
         for job in due:
+            if hasattr(self, "runtime_read") and not (await self.runtime_read())["settings"]["archiving_enabled"]:
+                break
             outcomes.append(await self.run_job(job["job_id"]))
         return outcomes
 
+    def _runtime_settings(self):
+        from app.archive.configuration import ArchiveControls
+        return ArchiveControls.bootstrap(self.config).model_dump()
+
     async def run_job(self, job_id) -> JobOutcome:
+        from app.archive.configuration import ArchiveControls
+        async with db.engine().connect() as conn:
+            pending = await repo.get_job(conn, job_id)
+        pinned = pending and (pending["plan"] or {}).get("runtime_settings")
+        worker = copy.copy(self)
+        if pinned:
+            worker.config = ArchiveControls.model_validate(pinned).effective(self.config)
+        return await worker._run_job(job_id)
+
+    async def _run_job(self, job_id) -> JobOutcome:
         async with db.transaction() as conn:
             job = await repo.acquire_job(conn, job_id, self.instance_id, self.clock(), self.config.archive_lease_seconds)
         if job is None:

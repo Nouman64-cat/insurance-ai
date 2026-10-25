@@ -389,7 +389,6 @@ This system is **not claimed to be tamper-proof** against full host or signing-k
 | `AUDIT_KEY_DIRECTORY`, `AUDIT_KEY_PASSPHRASE_FILE`, `AUDIT_SIGNER_STATE_DIRECTORY` | `/run/audit-keys`, `/run/audit-secrets/key-passphrase`, `/var/lib/audit-signer` | signer only |
 | `AUDIT_CHECKPOINT_REPLICA_DIRECTORY`, `AUDIT_CHECKPOINT_REPLICA_REQUIRED` | unset, `false` | optional second location |
 | `AUDIT_TRUST_ANCHOR_FINGERPRINT` | unset | pinned trust-root fingerprint |
-| `AUDIT_ENVIRONMENT_LABEL` | `local-dev` | display label only |
 
 (Where the requirement text names `AUDIT_ENVIRONMENT_ID=local-dev`: the environment *identity* is deliberately a UUID generated inside each database — a hand-set name such as
 `local-dev` would be identical on every laptop, which is exactly the accidental sharing to avoid — and the human-readable name is `AUDIT_ENVIRONMENT_LABEL`.)
@@ -511,8 +510,7 @@ chmod 600 ~/.config/insurance-ai/minio.license
 echo "AISTOR_LICENSE_FILE=$HOME/.config/insurance-ai/minio.license" >> .env
 
 # 3. Start MinIO, create the bucket and identities (idempotent), create the archive master key (once)
-docker compose up -d minio
-docker compose run --rm minio-init            # ends with "object lock: VERIFIED" and the two identities
+docker compose up -d --build                 # includes MinIO + minio-init after MinIO is healthy
 docker compose run --rm audit-archive-init    # prints the key id; BACK THE KEY UP (see "Master key")
 
 # 4. Start the audit service and signer (see Stage 2 for audit-signer-init), then check everything the archive depends on
@@ -520,7 +518,9 @@ docker compose up -d audit-service audit-signer
 docker compose exec audit-service python -m app.archive.cli status
 ```
 
-`status` prints `master_key: true` and a bucket report with `reachable`, `versioning`, `object_lock` and `private` all `true`. The container **refuses to start** (and says why) without a license file or without a root password of 16+ characters. AIStor Free is under MinIO's license (not AGPL); read the terms before redistributing this stack.
+The default Compose startup includes `minio-init`: missing buckets are created with Object Lock, and existing buckets and data are preserved. Repeated initialization is safe. To retry initialization independently, run `docker compose run --rm minio-init`.
+
+`status` prints `master_key: true` and a bucket report with `reachable`, `versioning`, `object_lock` and `private` all `true`. The container **refuses to start** (and says why) without a license key/file or without a root password of 16+ characters. AIStor Free is under MinIO's license (not AGPL); read the terms before redistributing this stack.
 
 ### Everyday commands
 
@@ -559,7 +559,7 @@ Keep backups outside the repository and away from the machine's only disk. The v
 
 | Symptom | Cause / fix |
 |---|---|
-| `minio` exits: "AIStor Free license file missing" | `AISTOR_LICENSE_FILE` unset or wrong path in `.env`; the file must exist and be non-empty |
+| `minio` exits: "Set AISTOR_LICENSE_KEY" | Set a valid key in `.env` and leave `AISTOR_LICENSE_FILE` blank, or configure an existing non-empty host license file |
 | `minio` exits: "MINIO_ROOT_USER … 16+ characters" | set both root variables in `.env` |
 | Jobs `FAILED` with `STORE_UNAVAILABLE` | MinIO is down or restarting; they resume automatically once `docker compose ps minio` shows *healthy* |
 | Jobs `FAILED` with `STORE_CAPABILITY` | the bucket lacks Object Lock/versioning or is public. Object Lock can only be set when a bucket is created: recreate the bucket (`minio-init` creates it correctly) |
@@ -604,32 +604,33 @@ There is no delete/update route for archives. Every sensitive action (verify, ev
 
 ## Stage 3 configuration
 
-Set these in `.env` (names in **bold** are passed through `docker-compose.yml`; the rest keep their defaults unless you add them to the `audit-service` environment). Secrets are generated locally and never committed.
+Archive runtime controls are configured in **SuperAdmin → Audit Configuration** (`http://localhost:3000/super-admin/audit-configuration`). They are stored as append-only versions in `audit.archive_configuration_versions`. Each save and its audit event commit in one transaction; a ledger failure rolls back the configuration too. Stale edits return 409 rather than overwrite a newer revision.
+
+New API operations use the committed settings immediately. Idle archive workers refresh within five seconds, including across replicas. Disabling archiving pauses new planning, queued archive processing and automatic cleanup; ingestion and archive retrieval remain available. Already-running jobs finish with their saved settings. Queued/retried jobs retain their compression, lock and safety settings in `archive_jobs.plan`, including across restarts. Existing object locks and cleanup deadlines are not shortened by a settings change.
+
+Controls: default hot retention, archive enablement, monthly/rolling schedule, zstd/no compression, planning interval, automatic cleanup, detach/drop, cleanup safety days, object-lock mode/days, environment label, test mode and test window. Test mode requires the `local-dev` label. Changing the label never changes the database's cryptographic environment ID. Automatic permanent drop requires typing `ENABLE-AUTOMATIC-DROP` when enabling it. Detach retains PostgreSQL disk usage. Cleanup still respects verification, retention policies and legal holds.
+
+The default hot window updates system-managed category defaults; explicit category and tenant policies retain their overrides. The normal cleanup safety window is applied to new archives. Infrastructure credentials, endpoints, key paths and signer/Kafka settings remain in `.env`.
+
+On upgrade, the running environment's archive controls seed the database once. Thereafter persisted values win over environment variables. New installations without legacy variables start with the normal defaults (archiving on, six months hot, cleanup off, test mode off). The runtime control entries can be removed from `.env` after the initial upgrade startup.
+
+Infrastructure settings below remain in `.env`. Secrets are generated locally and never committed.
 
 | Variable | Default | |
 |---|---|---|
 | `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD` | – (required) | MinIO root account: used only by `minio-init` and for the console |
-| `AISTOR_LICENSE_FILE` | – (required) | path of the AIStor Free license file, **outside the repo**; mounted read-only |
+| `AISTOR_LICENSE_KEY` | – | License string; startup writes it to a private container file. Leave `AISTOR_LICENSE_FILE` blank in this mode. |
+| `AISTOR_LICENSE_FILE` | – | Alternative: path of the AIStor license file **outside the repo**, mounted read-only. |
 | **`AUDIT_ARCHIVE_WRITER_KEY/SECRET`**, **`AUDIT_ARCHIVE_READER_KEY/SECRET`** | – (required) | application identities: writer = put/get/list (no delete), reader = get/list |
 | **`AUDIT_ARCHIVE_BUCKET`** | `insurance-audit-archive` | private, versioned, Object-Lock bucket |
 | **`AUDIT_ARCHIVE_S3_ENDPOINT`** | `http://minio:9000` | S3 endpoint the audit service uses |
-| **`AUDIT_ARCHIVING_ENABLED`** | `true` | `false`: ledger, checkpoints and verification run, nothing is archived |
-| **`AUDIT_HOT_RETENTION_MONTHS`** | `6` | fallback hot window; `retention_policies` overrides it |
-| **`AUDIT_ARCHIVE_SCHEDULE`** | `monthly` | `monthly` (cut-off on a month boundary) or `continuous` (rolling) |
-| **`AUDIT_ARCHIVE_INTERVAL_SECONDS`** | `300` | how often archivable history is looked for (planning is cheap and idempotent) |
-| **`AUDIT_ARCHIVE_COMPRESSION`** | `zstd` | `zstd` or `none` |
-| **`AUDIT_AUTO_HOT_CLEANUP`** | `false` | remove fully archived months from PostgreSQL automatically (keep `false` in development) |
-| **`AUDIT_CLEANUP_MODE`** | `detach` | `detach` (re-attachable) or `drop` |
-| **`AUDIT_CLEANUP_SAFETY_DAYS`** | `7` | wait this long after archiving before a hot copy may be removed |
-| **`AUDIT_ARCHIVE_LOCK_MODE`**, **`AUDIT_ARCHIVE_LOCK_DAYS`** | `GOVERNANCE`, `30` | Object Lock retention on every archive object (anti-tamper window, **not** a legal period); `…_REQUIRE_OBJECT_LOCK=true` refuses buckets without it |
-| **`AUDIT_ARCHIVE_TEST_MODE`**, **`AUDIT_ARCHIVE_TEST_HOT_SECONDS`** | `false`, `120` | **development only**: the hot window becomes N seconds so the cycle can be watched in minutes; refused unless `AUDIT_ENVIRONMENT_LABEL=local-dev` |
 | `AUDIT_ARCHIVE_MAX_EVENTS`, `AUDIT_ARCHIVE_CHUNK_BYTES`, `AUDIT_ARCHIVE_FETCH_BATCH` | `2000000`, `1048576`, `2000` | bounds per archive / per encrypted chunk / per database read |
 | `AUDIT_ARCHIVE_LEASE_SECONDS`, `AUDIT_ARCHIVE_RETRY_BASE_SECONDS`, `AUDIT_ARCHIVE_RETRY_MAX_SECONDS` | `600`, `30`, `1800` | job lease and retry backoff |
 | `AUDIT_RETRIEVAL_TTL_HOURS`, `AUDIT_RETRIEVAL_MAX_EVENTS` | `24`, `200000` | staged retrieval lifetime and size cap |
 | `AUDIT_ARCHIVE_KEY_DIRECTORY`, `AUDIT_ARCHIVE_WORK_DIRECTORY` | `/run/audit-archive-keys`, `/var/lib/audit-archive-work` | master key volume (read-only) and scratch space |
 
 ## Migrations (existing databases)
-`0003_partition_events` converts `events` to monthly range partitions inside one transaction, validating row counts, per-chain heads and a content digest before committing (the old table is kept as `events_legacy_v1`, unreadable by the app roles). `migrations/rollback/0003_unpartition_events.sql` reverses it (tested); `migrations/optional/0003_drop_legacy_events.sql` reclaims the legacy copy once you are satisfied. `0004_archive` adds the archive tables and functions. Neither changes a single event hash. Migrations run automatically when `audit-service` starts.
+`0003_partition_events` converts `events` to monthly range partitions inside one transaction, validating row counts, per-chain heads and a content digest before committing (the old table is kept as `events_legacy_v1`, unreadable by the app roles). `migrations/rollback/0003_unpartition_events.sql` reverses it (tested); `migrations/optional/0003_drop_legacy_events.sql` reclaims the legacy copy once you are satisfied. `0004_archive` adds the archive tables and functions. `0005_archive_configuration` adds append-only runtime configuration history; controls are bootstrapped on startup. Neither changes a single event hash. Migrations run automatically when `audit-service` starts.
 
 ## Stage 3 tests
 

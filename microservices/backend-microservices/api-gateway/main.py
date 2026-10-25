@@ -144,7 +144,7 @@ TENANT_SERVICE_URL = os.environ.get("TENANT_SERVICE_URL", "http://tenant-service
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
 
 
-async def _proxy_to_tenant(request: Request, url: str) -> Response:
+async def _proxy_to_tenant(request: Request, url: str, timeout: float = 120.0) -> Response:
     async with httpx.AsyncClient(follow_redirects=True) as client:
         headers = dict(request.headers)
         headers.pop("host", None)
@@ -156,7 +156,7 @@ async def _proxy_to_tenant(request: Request, url: str) -> Response:
                 headers=headers,
                 params=request.query_params,
                 content=body,
-                timeout=120.0,
+                timeout=timeout,
             )
             resp_headers = dict(resp.headers)
             # Strip CORS headers from upstream tenant-service to prevent duplicate CORS headers
@@ -854,7 +854,7 @@ async def _stream_request_management_events(request: Request, headers: dict):
 AUDIT_SERVICE_URL = os.environ.get("AUDIT_SERVICE_URL", "http://audit-service:8020")
 
 
-@app.api_route("/audit/{path:path}", methods=["GET", "POST"], include_in_schema=False)
+@app.api_route("/audit/{path:path}", methods=["GET", "POST", "PUT"], include_in_schema=False)
 async def proxy_audit(path: str, request: Request):
     if not path.startswith("v1/"):
         return JSONResponse(status_code=404, content={"detail": "Unknown Audit API version"})
@@ -1317,3 +1317,13 @@ async def submit_specialist_questionnaire(raw_token: str, request: Request):
 @app.api_route("/platform/agent-config", methods=["GET", "PUT", "OPTIONS"], include_in_schema=False)
 async def proxy_platform_agent_config(request: Request):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/platform/agent-config")
+
+
+@app.api_route("/platform/document-forgery/{path:path}", methods=["GET", "PUT", "OPTIONS"], include_in_schema=False)
+async def proxy_document_forgery(request: Request, path: str):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/platform/document-forgery/{path}")
+
+
+@app.api_route("/document-intelligence/{path:path}", methods=["GET", "POST", "OPTIONS"], include_in_schema=False)
+async def proxy_document_intelligence(request: Request, path: str):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/document-intelligence/{path}", timeout=630.0)

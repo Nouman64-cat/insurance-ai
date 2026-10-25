@@ -19,7 +19,7 @@ router = APIRouter(prefix="/tokens", tags=["Token Management"])
 def require_internal_service(x_internal_secret: str = Header(default="")) -> None:
     """Only the platform's own services may write to the usage ledger: they send the shared INTERNAL_API_SECRET.
 
-    This fails closed. The LLM-config endpoint treats an unset secret as "open"; here an unset secret means no write is
+    This fails closed. An unset secret means no write is
     accepted, so a missing configuration can never leave the ledger (and the spend figures built on it) writable by anyone
     who can reach the service. The comparison is constant-time."""
     expected = os.environ.get("INTERNAL_API_SECRET", "").strip()

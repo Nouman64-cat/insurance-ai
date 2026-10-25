@@ -1,0 +1,245 @@
+{
+  "schema_version": 1,
+  "model": "trufor",
+  "t95": 0.5256373882293701,
+  "tmax": 0.7155507206916809,
+  "severity_at_tmax": "LOW",
+  "n_calibration": 21,
+  "scope": "public_reference_baseline",
+  "render_dpi": 130,
+  "max_side": 1024,
+  "created_at": "2026-10-23T20:21:15.791770+00:00",
+  "validation": {
+    "n_genuine": 9,
+    "above_t95": 0,
+    "above_tmax": 0,
+    "fpr_at_t95": 0.0,
+    "fpr_at_tmax": 0.0,
+    "forged_detection_rate": null
+  },
+  "limitations": "Provisional genuine-reference baseline, not validated for customer submissions. No forged-case sensitivity measured. First page only; original PDFs; no phone-photo/compression validation. Findings remain LOW severity.",
+  "records": [
+    {
+      "source": "https://www.irs.gov/pub/irs-pdf/f1040.pdf",
+      "group": "irs",
+      "sha256": "3d31c226df0d189ced80e039d01cf0f8820c1019681a0f0ca6264de277b7e982",
+      "split": "calibration",
+      "score": 0.02546830102801323
+    },
+    {
+      "source": "https://www.irs.gov/pub/irs-pdf/f1040s1.pdf",
+      "group": "irs",
+      "sha256": "8dafec719f6a4716c259a2bdaca546d9bb9e262d1eabef885fe116a7327458fa",
+      "split": "calibration",
+      "score": 0.08565143495798111
+    },
+    {
+      "source": "https://www.irs.gov/pub/irs-pdf/f1040s2.pdf",
+      "group": "irs",
+      "sha256": "64d867b683334cfc533993e37ccb0d143449ec29428a78206be2e4de333941e8",
+      "split": "validation",
+      "score": 0.036187268793582916
+    },
+    {
+      "source": "https://www.irs.gov/pub/irs-pdf/f1040s3.pdf",
+      "group": "irs",
+      "sha256": "008cfd3fe3ebd0860452069b90fd0a3d53dda6dd8a5d870278370aa899a63f82",
+      "split": "calibration",
+      "score": 0.09290408343076706
+    },
+    {
+      "source": "https://www.irs.gov/pub/irs-pdf/f1040sa.pdf",
+      "group": "irs",
+      "sha256": "c14acf3478f4c33f27ac6e8ecd9f94b6fb25b16745b341728bd27847d2ef56bb",
+      "split": "calibration",
+      "score": 0.05588722601532936
+    },
+    {
+      "source": "https://www.irs.gov/pub/irs-pdf/f1040sb.pdf",
+      "group": "irs",
+      "sha256": "dd1ec3719954532bd219343d81385a2ada3c8e9573fc755a3893f1fbbecc63e2",
+      "split": "validation",
+      "score": 0.08270084857940674
+    },
+    {
+      "source": "https://www.irs.gov/pub/irs-pdf/f1040sc.pdf",
+      "group": "irs",
+      "sha256": "ddf401dbe060467d39f90ad2abf645df1de31512821a150dc68a3882bbf19716",
+      "split": "calibration",
+      "score": 0.12589424848556519
+    },
+    {
+      "source": "https://www.irs.gov/pub/irs-pdf/f1040sd.pdf",
+      "group": "irs",
+      "sha256": "90564c8b7e49280363612639b804d113ebedb516c2e87c70649f29c844da1d2e",
+      "split": "calibration",
+      "score": 0.15137988328933716
+    },
+    {
+      "source": "https://www.irs.gov/pub/irs-pdf/f1040se.pdf",
+      "group": "irs",
+      "sha256": "c5e2c8fa0ec5ee9153a0167734df634afe0ea8bb8483040766e5f4b1b12780f3",
+      "split": "validation",
+      "score": 0.033042341470718384
+    },
+    {
+      "source": "https://www.irs.gov/pub/irs-pdf/f1040sse.pdf",
+      "group": "irs",
+      "sha256": "05bc2b3e1dfca65d8c6fc6d652af4fa3736e953c6575d6e9f82590484677d347",
+      "split": "calibration",
+      "score": 0.1389055699110031
+    },
+    {
+      "source": "https://www.irs.gov/pub/irs-pdf/f1040es.pdf",
+      "group": "irs",
+      "sha256": "396ffad25baa737b33a67d27624f7444be3ac4e7245d287aebe5f89864f90b54",
+      "split": "calibration",
+      "score": 0.12737786769866943
+    },
+    {
+      "source": "https://www.irs.gov/pub/irs-pdf/f1040x.pdf",
+      "group": "irs",
+      "sha256": "e4d8d7df37209218d0d63d06e988004306365354873481726e93916accf3013e",
+      "split": "validation",
+      "score": 0.06164495646953583
+    },
+    {
+      "source": "https://www.irs.gov/pub/irs-pdf/f1040sr.pdf",
+      "group": "irs",
+      "sha256": "9b1acf56189a88a347d38936e0792552f7466040494b73bf779af17734620b79",
+      "split": "calibration",
+      "score": 0.10038160532712936
+    },
+    {
+      "source": "https://www.irs.gov/pub/irs-pdf/f1040v.pdf",
+      "group": "irs",
+      "sha256": "2426bb330ac54b765b32fbc3eceb878544aa333a3a823e1170aa8261a40fd251",
+      "split": "calibration",
+      "score": 0.08894052356481552
+    },
+    {
+      "source": "https://www.irs.gov/pub/irs-pdf/f1065.pdf",
+      "group": "irs",
+      "sha256": "0f19f556e12ef53c41ba27e5930b4373103f3abcf64693c4ea686451b2a8f56f",
+      "split": "validation",
+      "score": 0.19978679716587067
+    },
+    {
+      "source": "https://www.irs.gov/pub/irs-pdf/f1120.pdf",
+      "group": "irs",
+      "sha256": "016c7fb4042a565c23a98014b17019af7ddc89e3260dd3f926b84d6688b7be6e",
+      "split": "calibration",
+      "score": 0.08583119511604309
+    },
+    {
+      "source": "https://www.irs.gov/pub/irs-pdf/f1120s.pdf",
+      "group": "irs",
+      "sha256": "c4b7cae7f2283a2e3225523ea001a710109fee34aad909461421025b287cd18d",
+      "split": "calibration",
+      "score": 0.14646084606647491
+    },
+    {
+      "source": "https://www.irs.gov/pub/irs-pdf/f2441.pdf",
+      "group": "irs",
+      "sha256": "6c3c2d19163fa4c4de829abf9a89b43f08b4f4f3cb169740fc7da43e914269ce",
+      "split": "validation",
+      "score": 0.13112832605838776
+    },
+    {
+      "source": "https://www.irs.gov/pub/irs-pdf/f4562.pdf",
+      "group": "irs",
+      "sha256": "c05f9d1f5e26b1b21e18b0a13adbbcd3d568bb9f3ca53bd7bba7c795c7799b4a",
+      "split": "calibration",
+      "score": 0.42882561683654785
+    },
+    {
+      "source": "https://www.irs.gov/pub/irs-pdf/f4868.pdf",
+      "group": "irs",
+      "sha256": "36c7607db08ff469ed4e5df89e27ca90f29023c7cd6ca77c69343045e8f33d29",
+      "split": "calibration",
+      "score": 0.4326239228248596
+    },
+    {
+      "source": "https://raw.githubusercontent.com/invoice-x/invoice2data/master/tests/compare/AmazonWebServices.pdf",
+      "group": "invoice2data",
+      "sha256": "2e21d50f59a97b8c3778b238d14c9d7d15f74b8d021f819f1d2ede1f5412f81b",
+      "split": "calibration",
+      "score": 0.07099281996488571
+    },
+    {
+      "source": "https://raw.githubusercontent.com/invoice-x/invoice2data/master/tests/compare/AzureInterior.pdf",
+      "group": "invoice2data",
+      "sha256": "0dc290329d39b3855d9893c1623074282d18aeb66fc30506f5f51c19cb2d7f2b",
+      "split": "calibration",
+      "score": 0.5256373882293701
+    },
+    {
+      "source": "https://raw.githubusercontent.com/invoice-x/invoice2data/master/tests/compare/FlipkartInvoice.pdf",
+      "group": "invoice2data",
+      "sha256": "d57921532b83c0b622432324e98e8c8a566c44a6a3367b9f7862af10d7c97580",
+      "split": "validation",
+      "score": 0.35380375385284424
+    },
+    {
+      "source": "https://raw.githubusercontent.com/invoice-x/invoice2data/master/tests/compare/NetpresseInvoice.pdf",
+      "group": "invoice2data",
+      "sha256": "c7711ffe4f0c820d2bc3f1d15e0f5075b8cf3e9c831401beaa9cc36760ec11fc",
+      "split": "calibration",
+      "score": 0.7155507206916809
+    },
+    {
+      "source": "https://raw.githubusercontent.com/invoice-x/invoice2data/master/tests/compare/QualityHosting.pdf",
+      "group": "invoice2data",
+      "sha256": "e33124038dfb87cc5a4d93320f8a482561a72a179413cae3c569c7513f0c3bed",
+      "split": "calibration",
+      "score": 0.3410176634788513
+    },
+    {
+      "source": "https://raw.githubusercontent.com/invoice-x/invoice2data/master/tests/compare/SammyMaystoneLinesTest.pdf",
+      "group": "invoice2data",
+      "sha256": "f014ddfa83dd456ca89643fe8f3ca6579e32f68839970a408fd85fffe343afe8",
+      "split": "validation",
+      "score": 0.21334557235240936
+    },
+    {
+      "source": "https://raw.githubusercontent.com/invoice-x/invoice2data/master/tests/compare/coolblue1.pdf",
+      "group": "invoice2data",
+      "sha256": "3932539b71338f0c73d6ade499a2a00cd2f9056c60f5a87b1ef623af095e1607",
+      "split": "calibration",
+      "score": 0.37388789653778076
+    },
+    {
+      "source": "https://raw.githubusercontent.com/invoice-x/invoice2data/master/tests/compare/coolblue2.pdf",
+      "group": "invoice2data",
+      "sha256": "ebf3e41e3bd322352099a81611a7d4d7a52fe9802b45eebe7df45674bbfb093c",
+      "split": "calibration",
+      "score": 0.3627493679523468
+    },
+    {
+      "source": "https://raw.githubusercontent.com/invoice-x/invoice2data/master/tests/compare/free_fiber.pdf",
+      "group": "invoice2data",
+      "sha256": "a3701f395925c3797845d469365c2764a717453baee53c6df07a3cf20267bfa2",
+      "split": "validation",
+      "score": 0.25355637073516846
+    },
+    {
+      "source": "https://raw.githubusercontent.com/invoice-x/invoice2data/master/tests/compare/oyo.pdf",
+      "group": "invoice2data",
+      "sha256": "ca0ca71b47446882fecacabe4415d32e67849f9fd96f427d20252b99a388ae8a",
+      "split": "calibration",
+      "score": 0.3366965651512146
+    }
+  ],
+  "runtime": {
+    "worker_sha256": "e2ded9e0f05f7acadec5abc9d0b2acbc0edef958b2f2fa53843e2443a77f7fa6",
+    "upstream_revision": "ae54475df6f41a491d7615100feb19263dec13f7",
+    "weights_sha256": "ac1d90e329a72e0d66e8665e123a19e94bfae3209c3ef8a4f9ca3b91578c7844",
+    "packages": {
+      "torch": "2.6.0+cpu",
+      "torchvision": "0.21.0",
+      "numpy": "2.2.6",
+      "timm": "0.6.13",
+      "pillow": "11.3.0"
+    }
+  }
+}

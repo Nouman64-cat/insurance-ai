@@ -15,7 +15,8 @@ from fastapi import FastAPI
 
 from app import db, demo_tools, migrate
 from app.api import archive as archive_api, checkpoints, demo as demo_api, events, ops, verification
-from app.archive import service as archive_service
+from app.archive import configuration as archive_configuration
+from app.archive.configuration import RuntimeArchive
 from app.archive.scheduler import ArchiveScheduler
 from app.checkpoints.generator import CheckpointGenerator
 from app.checkpoints.scheduler import CheckpointScheduler
@@ -56,12 +57,14 @@ async def lifespan(app: FastAPI):
         tasks.append(asyncio.create_task(CheckpointScheduler(app.state.generator).run(stop), name="audit-checkpoints"))
         if settings.verify_enabled:
             tasks.append(asyncio.create_task(integrity_verifier.scheduler(stop), name="audit-anchored-verifier"))
-    app.state.archive = None
-    if settings.archiving_enabled and signer is not None:
+    app.state.archive = app.state.archive_runtime = None
+    await archive_configuration.initialize(settings)
+    if signer is not None:
         try:
-            services = archive_service.build(settings, signer, f"{socket.gethostname()}-{uuid.uuid4().hex[:8]}")
-            app.state.archive = services
-            tasks.append(asyncio.create_task(ArchiveScheduler(services).run(stop), name="audit-archive"))
+            runtime = RuntimeArchive(settings, signer, f"{socket.gethostname()}-{uuid.uuid4().hex[:8]}")
+            _, effective, services = await runtime.snapshot()
+            app.state.archive, app.state.archive_runtime = services, runtime
+            tasks.append(asyncio.create_task(ArchiveScheduler(services, config=effective, runtime=runtime).run(stop), name="audit-archive"))
         except Exception as exc:   # archiving is optional infrastructure: the ledger, checkpoints and verification keep running without it
             log.error("archiving is DISABLED: %s", exc)
     yield

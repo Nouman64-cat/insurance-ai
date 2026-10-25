@@ -41,7 +41,8 @@ async def _seed(months: int, events: int, tenant: str, newest: float = 0.0) -> d
     from app import db, migrate
     from app.services import audit_service
     from shared.audit.schema import AuditIntent
-    if settings.environment_label != "local-dev":
+    from app.archive.configuration import read
+    if (await read())["settings"]["environment_label"] != "local-dev":
         raise SystemExit("seed-aged writes synthetic history and is allowed only when AUDIT_ENVIRONMENT_LABEL=local-dev")
     tenant_id = uuid.UUID(tenant) if tenant else uuid.uuid4()
     now = datetime.now(timezone.utc)
