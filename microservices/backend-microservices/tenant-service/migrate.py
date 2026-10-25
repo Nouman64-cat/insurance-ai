@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from sqlmodel import SQLModel
 
 from shared.audit.outbox import OUTBOX_DDL as _AUDIT_OUTBOX_DDL
-from shared.evaluation.ddl import EVAL_IMMUTABILITY_DDL, EVAL_RUN_COLUMNS_DDL  # light on purpose: importing shared.models here would load core too early
+from shared.evaluation.ddl import TEMPLATE_DDL, EVAL_COST_DDL, EVAL_DRIFT_DDL, EVAL_IMMUTABILITY_DDL, EVAL_RUN_COLUMNS_DDL  # light on purpose: importing shared.models here would load core too early
 
 log = logging.getLogger(__name__)
 
@@ -1523,6 +1523,12 @@ MIGRATIONS: list[tuple[str, str]] = [
     *[(f"v72{chr(97 + i)} — {label}", sql) for i, (label, sql) in enumerate(EVAL_IMMUTABILITY_DDL)],
     # Evaluation runs, step 6 to 9: the columns added after the first version of the tables, and the metric scores' trigger.
     *[(f"v73{i:02d} — {label}", sql) for i, (label, sql) in enumerate(EVAL_RUN_COLUMNS_DDL)],
+    # Phase 6: the change registry and the review queue: append-only history, and a review item can never be deleted.
+    *[(f"v74{i:02d} — {label}", sql) for i, (label, sql) in enumerate(EVAL_DRIFT_DDL)],
+    # Editable templates: published versions are immutable.
+    *[(f"v75{i:02d} — {label}", sql) for i, (label, sql) in enumerate(TEMPLATE_DDL)],
+    # Phase 7: cost lines, budgets, exchange rates and provider statements are append-only.
+    *[(f"v76{i:02d} — {label}", sql) for i, (label, sql) in enumerate(EVAL_COST_DDL)],
 ]
 
 

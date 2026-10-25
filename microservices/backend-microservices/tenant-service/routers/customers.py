@@ -4,6 +4,7 @@ from datetime import date, datetime, timedelta
 from datetime import date
 from typing import Literal, Optional
 from uuid import UUID
+from services import lead_template
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, or_, cast, String, null as sa_null
 from sqlalchemy.orm import selectinload
@@ -223,6 +224,8 @@ async def create_customer(
     scope = await source_scope(token, session)
     if scope is not None and acquisition_source_id not in scope:
         acquisition_source_id = next(iter(scope))
+
+    body.details = await lead_template.check_custom(session, body.details, creating=True)
 
     # 3. Persist — tenant_id is always taken from the path (JWT-scoped)
     customer = Customer(
@@ -987,6 +990,9 @@ async def update_customer(
                 if field in body.details and body.details[field] != (customer.details or {}).get(field):
                     raise HTTPException(status_code=403, detail="Use the lead risk assessment action to record findings.")
             body.details = {**(customer.details or {}), **body.details}
+
+    if body.details is not None:
+        body.details = await lead_template.check_custom(session, body.details, existing=(customer.details or {}).get("custom"), creating=False)
 
     was_draft = customer.profile_status == ProfileStatusEnum.DRAFT
 

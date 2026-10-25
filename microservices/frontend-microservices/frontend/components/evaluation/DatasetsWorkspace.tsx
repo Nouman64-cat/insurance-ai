@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState, Suspense } from "react";
 import api from "@/app/services/api";
 import { tx } from "@/lib/i18n/tx";
+import { useQueryState } from "@/lib/useQueryState";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 type CaseStatus = "draft" | "in_review" | "approved" | "rejected" | "archived";
@@ -1109,9 +1110,11 @@ type ModalKind = null | "new" | "upload" | "add" | "publish";
 function DatasetsContent() {
   const [authorized, setAuthorized] = useState(true);
   const [datasets, setDatasets] = useState<DatasetSummary[]>([]);
-  const [slug, setSlug] = useState("");
+  const [slugParam, setSlug] = useQueryState("dataset");
+  const slug = slugParam || datasets[0]?.slug || "";
   const [detail, setDetail] = useState<DatasetDetail | null>(null);
-  const [tab, setTab] = useState<Tab>("cases");
+  const [tabParam, setTab] = useQueryState("tab", "cases");
+  const tab = (["cases", "versions", "fixtures"].includes(tabParam) ? tabParam : "cases") as Tab;
   const [modal, setModal] = useState<ModalKind>(null);
   const [notice, setNotice] = useState<Notice>(null);
   const [error, setError] = useState("");
@@ -1124,7 +1127,7 @@ function DatasetsContent() {
     try {
       const { data } = await api.get<DatasetSummary[]>("/eval/datasets");
       setDatasets(data);
-      setSlug((cur) => cur || data[0]?.slug || "");
+      
     } catch (e: any) {
       setError(errText(e, "Failed to load the datasets."));
     } finally {
@@ -1211,7 +1214,7 @@ function DatasetsContent() {
     <div className="px-6 py-5 space-y-5 max-w-screen-2xl mx-auto w-full font-sans">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">{tx("Golden Datasets")}</h1>
+          <h2 className="text-xl font-bold text-slate-900 tracking-tight">{tx("Evaluation Datasets")}</h2>
           <p className="text-sm text-slate-500 mt-0.5 max-w-3xl">
             {tx("Keep the evaluation cases in step with the system. Edit or add cases here, approve them, then publish a new version. Published versions never change, so every evaluation run can say exactly which version it used.")}
           </p>
@@ -1333,7 +1336,7 @@ function DatasetsContent() {
   );
 }
 
-export default function GoldenDatasetsPage() {
+export default function DatasetsWorkspace() {
   return (
     <Suspense fallback={null}>
       <DatasetsContent />

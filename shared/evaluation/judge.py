@@ -72,6 +72,9 @@ async def score_case(client: Any, *, url: Optional[str], judge_model: Optional[s
                 "cost_usd": 0.0, "scored": 0, "unscored": len(requests)}
     total, priced = 0.0, True
     for req in requests:
+        if req["metric"] not in METRICS:                        # never guess what a misspelt metric meant: the judge service would score it as a generic criterion under the wrong name
+            metrics.append(_unscored(req, "judge_error", f"the judge has no metric called {req['metric']!r} (known: {', '.join(METRICS)})", judge_model))
+            continue
         if req["metric"] in NEEDS_CONTEXT and not req["context"]:
             metrics.append(_unscored(req, "not_applicable", f"{req['metric']} is judged against reference context and this case has none", judge_model))
             continue

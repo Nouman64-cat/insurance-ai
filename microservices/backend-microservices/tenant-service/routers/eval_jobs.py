@@ -32,9 +32,12 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from database import get_session
 from routers.auth import _get_current_user, oauth2_scheme, verify_superadmin
 from services.audit_capture import record_standalone
+from services.eval_estimate import estimate_cost
+from services.eval_lake import get_lake
 from shared.evaluation import judge as judge_lib
+from shared.evaluation.object_store import IntegrityFailure, LakeError
 from shared.models.core import User
-from shared.models.evaluation import EvalDataset, EvalDatasetVersion, EvalJob, EvalJobEvent, EvalRun, EvalVersionCase
+from shared.models.evaluation import EvalDataset, EvalDatasetVersion, EvalJob, EvalJobEvent, EvalModel, EvalRun, EvalVersionCase
 
 router = APIRouter(prefix="/eval/jobs", tags=["Evaluation jobs"], dependencies=[Depends(verify_superadmin)])
 internal = APIRouter(prefix="/internal/eval/jobs", tags=["Evaluation jobs (worker)"])
@@ -59,9 +62,12 @@ class JobRequest(BaseModel):
     skills: Literal["on", "off", "default"] = "default"
     prompt_version: Optional[str] = Field(default=None, pattern=_ID)
     judge: Optional[str] = Field(default=None, pattern=_MODEL)
+    metrics: List[str] = Field(default_factory=list, max_length=7, description="judge only these metrics (default: whatever each case asks for)")
     allow_same_judge: bool = False
     repeat: str = Field(default="1", pattern=r"^(auto|[1-9][0-9]{0,2})$")
     kind: Literal["suite", "benchmark_agent", "benchmark_direct"] = "suite"
+    models: List[str] = Field(default_factory=list, max_length=8, description="a benchmark: the models to compare (provider/model each), at least two")
+    settings: List[str] = Field(default_factory=list, max_length=6, description="a direct benchmark: model settings, temperature=0")
     vary: Optional[str] = Field(default=None, pattern=r"^(skills|prompt|model)=[^,\s]+(,[^,\s]+)+$", description="a paired comparison: skills=on,off")
     retries: int = Field(default=1, ge=0, le=5)
     concurrency: int = Field(default=4, ge=1, le=16)
@@ -76,6 +82,30 @@ class JobRequest(BaseModel):
     gate_min_pass_rate: float = Field(default=0.9, ge=0, le=1)
     gate_min_repetitions: int = Field(default=1, ge=1, le=100)
     strict: bool = False
+
+    @field_validator("models")
+    @classmethod
+    def _models(cls, values: List[str]) -> List[str]:
+        for v in values:
+            if not re.fullmatch(_MODEL, v):
+                raise ValueError(f"{v!r} is not provider/model")
+        return values
+
+    @field_validator("metrics")
+    @classmethod
+    def _metrics(cls, values: List[str]) -> List[str]:
+        bad = [v for v in values if v not in judge_lib.METRICS]
+        if bad or len(set(values)) != len(values):
+            raise ValueError(f"metrics are chosen once each from {', '.join(judge_lib.METRICS)}")
+        return values
+
+    @field_validator("settings")
+    @classmethod
+    def _settings(cls, values: List[str]) -> List[str]:
+        for v in values:
+            if not re.fullmatch(r"(temperature|top_p|max_tokens|seed)=-?[0-9]+(\.[0-9]+)?", v):
+                raise ValueError(f"{v!r} is not a model setting (temperature, top_p, max_tokens or seed = a number)")
+        return values
 
     @field_validator("case_ids", "categories", "operations")
     @classmethod
@@ -133,6 +163,34 @@ async def _check_request(session: AsyncSession, req: JobRequest) -> Dict[str, An
             problems.append(f"{dim} is varied, so it cannot also be set for the whole run")
         if dim == "model" and req.model:
             problems.append("model is varied, so it cannot also be set for the whole run")
+    if req.kind.startswith("benchmark_"):
+        mode = req.kind.split("_", 1)[1]
+        if len(req.models) < 2 or len(set(req.models)) != len(req.models):
+            problems.append("a benchmark compares at least two different models (models)")
+        if req.model or req.vary:
+            problems.append("a benchmark chooses its models in `models`; model and vary are for single runs")
+        if mode == "direct" and (req.skills != "default" or req.prompt_version):
+            problems.append("skills and prompt version belong to the agent: a direct benchmark calls the bare model")
+        if mode == "agent" and req.settings:
+            problems.append("model settings apply to a direct benchmark; the agent uses the platform's own configuration")
+        for label in req.models:
+            provider, _, model_id = label.partition("/")
+            entry = (await session.exec(select(EvalModel).where(EvalModel.provider == provider, EvalModel.model_id == model_id))).first()
+            if entry is None:
+                problems.append(f"{label} is not in the model registry; register it first")
+            elif entry.status != "active" or "candidate" not in (entry.roles or []):
+                problems.append(f"{label} is {entry.status} / roles {','.join(entry.roles or [])}: it cannot be benchmarked")
+        if req.judge:
+            provider, _, model_id = req.judge.partition("/")
+            judge = (await session.exec(select(EvalModel).where(EvalModel.provider == provider, EvalModel.model_id == model_id))).first()
+            if judge is None or judge.status != "active" or "judge" not in (judge.roles or []):
+                problems.append(f"{req.judge} is not an active judge in the model registry")
+            if req.judge in req.models and not req.allow_same_judge:
+                problems.append("the judge is also one of the models being compared; choose another judge or allow it on purpose")
+    elif req.models or req.settings:
+        problems.append("models and settings are for a benchmark (kind benchmark_agent or benchmark_direct)")
+    if req.metrics and not req.judge:
+        problems.append("metrics choose what the judge scores: a judge is needed")
     if req.model is None and not req.vary:
         pass                                                           # a run without a model still runs every non-chat case; chat cases are skipped
     if problems:
@@ -141,15 +199,60 @@ async def _check_request(session: AsyncSession, req: JobRequest) -> Dict[str, An
     in_scope = sum(n for cat, n in rows if not req.categories or cat in req.categories)
     cases = len(req.case_ids) if req.case_ids else in_scope
     reps = None if req.repeat == "auto" else int(req.repeat)
-    variants = len(req.vary.split("=", 1)[1].split(",")) if req.vary else 1
-    return {"cases_in_version": version.case_count, "cases_selected": cases, "repetitions": req.repeat, "variants": variants,
-            "executions": (cases * reps * variants) if reps else None, "real_model": bool(req.model and not req.model.startswith("mock/")),
-            "synthetic": bool(req.model and req.model.startswith("mock/")), "note": "executions are an upper bound: a case skipped or blocked does not run"}
+    variants = len(req.vary.split("=", 1)[1].split(",")) if req.vary else (len(req.models) if req.models else 1)
+    estimate = {"cases_in_version": version.case_count, "cases_selected": cases, "repetitions": req.repeat, "variants": variants,
+                "executions": (cases * reps * variants) if reps else None, "real_model": any(not m.startswith("mock/") for m in ([req.model] if req.model else req.models)),
+                "synthetic": any(m.startswith("mock/") for m in ([req.model] if req.model else req.models)), "note": "executions are an upper bound: a case skipped or blocked does not run"}
+    try:
+        loaded = await get_lake().load_version(version)                # the preview reads the verified snapshot, so it counts the cases that would really run
+        estimate["cost"] = await estimate_cost(session, req, loaded.cases)
+    except (IntegrityFailure, LakeError) as exc:
+        estimate["cost"] = {"error": f"the cost could not be estimated: the data lake did not give the verified version ({exc})"}
+    return estimate
+
+
+async def _budget_gate(session: AsyncSession, estimate: Dict[str, Any], actor: User, req: JobRequest) -> Dict[str, Any]:
+    """Stop scheduling when the request would pass an enforced daily or monthly budget; the refusal is audited. Returns the budget status to keep with the job."""
+    from services import eval_budget
+    try:
+        return await eval_budget.enforce(session, estimate)
+    except HTTPException as exc:
+        await record_standalone(module="administration", action="eval.budget.refused", entity_type="eval_job", entity_id="-", tenant_id=actor.tenant_id, actor_id=str(actor.id),
+                                actor_type="USER", actor_role="SuperAdmin", metadata={"dataset": req.dataset, "version": req.version, "problems": (exc.detail or {}).get("problems", [])[:4]})
+        raise
+
+
+@router.post("/estimate")
+async def preview_job(req: JobRequest, session: AsyncSession = Depends(get_session)):
+    """What this request would run and cost, checked exactly as a real request is. Nothing is queued."""
+    estimate = await _check_request(session, req)
+    from services import eval_budget
+    return {"valid": True, "estimate": estimate, "budget": await eval_budget.status(session, eval_budget.estimate_total(estimate))}
+
+
+@router.post("/{job_id}/rerun", status_code=201)
+async def rerun_job(job_id: UUID, session: AsyncSession = Depends(get_session), actor: User = Depends(_actor)):
+    """Queue a new job with the same request as an earlier one (checked again: the dataset version or the registry may have changed since)."""
+    old = await _job(session, job_id)
+    try:
+        req = JobRequest.model_validate(old.config)
+    except Exception as exc:                                                                      # noqa: BLE001
+        raise HTTPException(422, detail={"message": "The earlier request is no longer valid.", "problems": [str(exc)[:300]]})
+    estimate = await _check_request(session, req)
+    estimate["budget"] = await _budget_gate(session, estimate, actor, req)
+    job = EvalJob(config=req.model_dump(exclude_none=True), estimate=estimate, created_by=actor.id)
+    session.add(job)
+    session.add(EvalJobEvent(job_id=job.id, seq=1, kind="state", message=f"queued (rerun of {old.id})", data={"state": "queued", "rerun_of": str(old.id)}))
+    await session.commit()
+    await record_standalone(module="administration", action="eval.job.rerun", entity_type="eval_job", entity_id=str(job.id), tenant_id=actor.tenant_id,
+                            actor_id=str(actor.id), actor_type="USER", actor_role="SuperAdmin", metadata={"rerun_of": str(old.id)})
+    return _out(job)
 
 
 @router.post("", status_code=201)
 async def create_job(req: JobRequest, session: AsyncSession = Depends(get_session), actor: User = Depends(_actor)):
     estimate = await _check_request(session, req)
+    estimate["budget"] = await _budget_gate(session, estimate, actor, req)
     config = req.model_dump(exclude_none=True)
     job = EvalJob(config=config, estimate=estimate, created_by=actor.id)
     session.add(job)
@@ -162,7 +265,7 @@ async def create_job(req: JobRequest, session: AsyncSession = Depends(get_sessio
 
 @router.get("")
 async def list_jobs(state: Optional[str] = Query(default=None), limit: int = Query(default=50, ge=1, le=200), session: AsyncSession = Depends(get_session)):
-    stmt = select(EvalJob).order_by(EvalJob.created_at.desc()).limit(limit)
+    stmt = select(EvalJob).where(func.coalesce(EvalJob.config["kind"].astext, "") != "drift_scan").order_by(EvalJob.created_at.desc()).limit(limit)     # scans have their own page
     if state:
         stmt = stmt.where(EvalJob.state == state)
     return [_out(j) for j in (await session.exec(stmt)).all()]
@@ -317,6 +420,17 @@ async def post_events(job_id: UUID, body: Events, session: AsyncSession = Depend
         if kind == "progress":
             job.progress = data
     job.heartbeat_at = datetime.utcnow()
+    if not job.cancel_requested and any(e.get("kind") == "case" for e in body.events):
+        await session.flush()
+        from services import eval_budget
+        verdict = await eval_budget.check_running(session, job)
+        if not verdict["allowed"]:                                                    # a limit that is enforced has been passed: stop the run, keep what it has
+            job.cancel_requested = True
+            reason = "; ".join(verdict["messages"])[:600]
+            await _append(session, job, "log", f"stopped by the spending limit: {reason}. The case in flight will finish, then the run stops and keeps what it has.",
+                          {"cancel_requested": True, "stopped_by": "budget", "job_spent_usd": verdict.get("job_spent_usd")})
+            await record_standalone(module="administration", action="eval.budget.stopped_running_job", entity_type="eval_job", entity_id=str(job.id), tenant_id=None, actor_id=None,
+                                    actor_type="SYSTEM", actor_role="SYSTEM", metadata={"job_spent_usd": verdict.get("job_spent_usd"), "messages": verdict["messages"][:3]})
     session.add(job)
     await session.commit()
     return {"cancel_requested": job.cancel_requested, "state": job.state}

@@ -145,6 +145,26 @@ def _reps(rows: Sequence[Dict[str, Any]]) -> int:
     return max((r.get("repetition", 1) for r in rows), default=1)
 
 
+def validity(mode: str, benchmark_id: str, runs: Sequence[Dict[str, Any]]) -> List[str]:
+    """Did every run actually do what the benchmark asked? A run that recorded another mode, kind or group (an older runner, a changed
+    command line) is not evidence for this benchmark. Only runs that produced a summary can be checked; a missing one is reported by the
+    model's own status."""
+    problems: List[str] = []
+    for r in runs:
+        cfg = (r["summary"] or {}).get("config")
+        if cfg is None:
+            continue
+        if cfg.get("mode") != mode:
+            problems.append(f"{r['label']} ran in mode {cfg.get('mode')!r}, not {mode!r}")
+        if cfg.get("kind") != f"benchmark_{mode}":
+            problems.append(f"{r['label']} was recorded as kind {cfg.get('kind')!r}")
+        if cfg.get("group_id") != benchmark_id:
+            problems.append(f"{r['label']} belongs to group {cfg.get('group_id')!r}")
+        if cfg.get("model_id") != r["label"] and f"{cfg.get('provider')}/{cfg.get('model_id')}" != r["label"] and cfg.get("model_id") != r["label"].split("/", 1)[-1]:
+            problems.append(f"{r['label']}: the run recorded model {cfg.get('model_id')!r}")
+    return problems
+
+
 def build_benchmark(*, benchmark_id: str, mode: str, runs: Sequence[Dict[str, Any]], judge_model: Optional[str], judge_info: Optional[Dict[str, Any]] = None,
                     calibration: Optional[Dict[str, Any]] = None, created: str = "") -> Dict[str, Any]:
     """`runs`: one dict per model: label, rows (results.jsonl), summary (summary.json), folder, exit_code."""
@@ -169,12 +189,15 @@ def build_benchmark(*, benchmark_id: str, mode: str, runs: Sequence[Dict[str, An
         notes.append("the models were NOT all asked the same thing in the same way (see the fairness checks): treat the comparison with care")
     if not leader and not synthetic and len(order) > 1:
         notes.append("no model is shown to be better than all the others on this evidence")
+    problems = validity(mode, benchmark_id, runs)
+    if problems:
+        notes.insert(0, "INVALID BENCHMARK: " + "; ".join(problems) + ". Its runs are kept as they are, but nothing here may be read as a comparison.")
     first = runs[0]["summary"] if runs else {}
-    return {"benchmark_id": benchmark_id, "mode": mode, "created": created, "synthetic": synthetic, "complete": not blocked and all(r.get("exit_code") in (0, 1) for r in runs),
+    return {"valid": not problems, "problems": problems, **{"benchmark_id": benchmark_id, "mode": mode, "created": created, "synthetic": synthetic, "complete": not blocked and all(r.get("exit_code") in (0, 1) for r in runs),
             "dataset": first.get("dataset"), "repetitions": first.get("repeat"), "judge": {"model": judge_model, **(judge_info or {}), "calibration": calibration},
             "fallback": FALLBACK, "evidence_rules": {"min_cases": MIN_CASES, "min_repetitions": MIN_REPETITIONS, "interval": "95% bootstrap on the mean paired difference", "sign_test_alpha": SIGN_TEST_ALPHA},
             "models": models, "order": order, "comparisons": comparisons, "leader": leader, "fairness": checks, "notes": notes,
-            "runs": {r["label"]: {"folder": r["folder"], "run_id": r["summary"].get("run_id"), "exit_code": r.get("exit_code")} for r in runs}}
+            "runs": {r["label"]: {"folder": r["folder"], "run_id": r["summary"].get("run_id"), "exit_code": r.get("exit_code")} for r in runs}}}
 
 
 def _pct(x: Optional[float]) -> str:
@@ -190,7 +213,7 @@ def _usd(x: Optional[float]) -> str:
 
 
 def render(b: Dict[str, Any]) -> str:
-    out = ["=" * 100, f"Benchmark {b['benchmark_id']}   mode: {b['mode']}   repetitions: {b['repetitions']}   judge: {b['judge'].get('model') or 'none'}", "-" * 100]
+    out = ["=" * 100, ("*** INVALID *** " if not b.get("valid", True) else "") + f"Benchmark {b['benchmark_id']}   mode: {b['mode']}   repetitions: {b['repetitions']}   judge: {b['judge'].get('model') or 'none'}", "-" * 100]
     ds = b.get("dataset") or {}
     out.append(f"dataset {ds.get('dataset')} {ds.get('version')}" + ("" if ds.get("verified") else "   (NOT a verified published version)"))
     for n in b["notes"]:
@@ -204,7 +227,7 @@ def render(b: Dict[str, Any]) -> str:
             continue
         ttft = m["ttft_ms"]["p50"]
         out.append(f"  {label:34} {_pct(m['pass_rate']):>7} ({m['ci_low'] * 100:3.0f}-{m['ci_high'] * 100:3.0f}%) {'':6} {m['critical_failures']:>5} {_pct(m['consistency']):>8} "
-                   f"{_ms(m['latency_ms']):>22} {('-' if ttft is None else f'{ttft:.0f}'):>9} {m['errors']:>3}/{m['timeouts']:<3} {_usd(m['cost_per_passed_usd']):>10}")
+                   f"{_ms(m['latency_ms']):>22} {('-' if ttft is None else f'{ttft:.0f}'):>9} {m['errors']:>3}/{m['timeouts']:<3} {('no passes' if not m['passes'] else _usd(m['cost_per_passed_usd'])):>10}")
     out.append("")
     for label in b["order"]:
         m = b["models"][label]

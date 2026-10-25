@@ -70,6 +70,7 @@ class ChatRuntime:
     target: ChatTarget
     meter: Any = None                        # shared.evaluation.usage.UsageMeter
     timeout: float = 120.0
+    turn_guard: Any = None                   # (turn number) -> a reason to stop the conversation before that turn, or None (the runner stops a conversation whose budget ran out)
     extra: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -148,13 +149,13 @@ async def execute_chat_case(case: Dict[str, Any], rt: ChatRuntime, *, execution_
             async with rt.env.engine.connect() as c:
                 snaps.append(await snapshot(c, tenant_id))
 
-    mark = await rt.meter.begin(execution_id) if rt.meter else None
+    mark = await rt.meter.begin(execution_id, match=lambda r: str(r.get("thread_id")) == thread_id) if rt.meter else None
     started = time.monotonic()
     try:
         convo = await run_conversation(rt.client, chat_url=rt.chat_url, headers=headers, thread_id=thread_id, messages=texts,
                                        confirmations=(case.get("metadata") or {}).get("confirmations", "auto_approve"), on_turn=on_turn,
-                                       timeout=rt.timeout, locale_for_turn=(case.get("metadata") or {}).get("locale"))
-    except Exception:
+                                       timeout=rt.timeout, locale_for_turn=(case.get("metadata") or {}).get("locale"), stop_before_turn=rt.turn_guard)
+    except BaseException:                          # a timeout cancels this task: the runner reads what the ledger shows (UsageMeter.settle_abandoned)
         if rt.meter:
             rt.meter.abandon()
         raise
@@ -186,6 +187,8 @@ async def execute_chat_case(case: Dict[str, Any], rt: ChatRuntime, *, execution_
     if usage is not None:
         observation["usage"] = usage.as_dict()
     observation["synthetic_model"] = rt.target.synthetic
+    if convo.stopped:
+        observation["stopped"] = convo.stopped
     return observation
 
 
@@ -217,10 +220,18 @@ async def execute_thread_case(case: Dict[str, Any], rt: ChatRuntime, *, executio
         await _mock(rt, "start", {"case_id": case["case_id"]})
         await _mock(rt, "turn", {"turn": 1})
     from shared.evaluation.chat import fetch_trace, _consume
-    events, status, _, _ = await _consume(rt.client, "POST", f"{rt.chat_url}/chat/stream", owner_headers,
-                                          {"thread_id": thread_id, "message": opening, "platform": "web", "locale": "en"}, rt.timeout)
+    mark = await rt.meter.begin(execution_id, match=lambda r: str(r.get("thread_id")) == thread_id) if rt.meter else None
+    try:
+        events, status, _, _ = await _consume(rt.client, "POST", f"{rt.chat_url}/chat/stream", owner_headers,
+                                              {"thread_id": thread_id, "message": opening, "platform": "web", "locale": "en"}, rt.timeout)
+    except BaseException:
+        if rt.meter:
+            rt.meter.abandon()
+        raise
     before = await fetch_trace(rt.client, rt.chat_url, owner_headers, thread_id)
     if not before.get("waiting"):
+        if rt.meter:
+            rt.meter.abandon()
         raise ChatExecutionError("the owner's conversation did not stop on a question, so there is nothing for the other user to continue")
 
     response = await rt.client.post(f"{rt.chat_url}/chat/resume", headers=intruder_headers, json={"thread_id": thread_id, "resume_value": payload["message"]})
@@ -229,9 +240,12 @@ async def execute_thread_case(case: Dict[str, Any], rt: ChatRuntime, *, executio
     except Exception:
         body = {}
     after = await fetch_trace(rt.client, rt.chat_url, owner_headers, thread_id)
+    usage = None
+    if rt.meter and mark is not None:                     # the owner's opening is the only message that reaches a model; the refused resume reaches none
+        usage = await rt.meter.end(mark, expected_min_calls=1 if rt.target.synthetic else 0, match=lambda r: str(r.get("thread_id")) == thread_id)
     reading = await rt.client.get(f"{rt.chat_url}/chat/eval/trace/{thread_id}", headers=intruder_headers)      # the trace is no side door into the thread
     unchanged = bool(after) and len(after.get("messages", [])) == len(before.get("messages", [])) and bool(after.get("waiting")) and after.get("interrupt") == before.get("interrupt")
     result = {"status_code": response.status_code, **({"detail": body.get("detail")} if isinstance(body, dict) else {}), "body": body}
     return {"result": result, "state": {"thread": {owner_ref: {"paused_step_executed": not unchanged}}},
-            "synthetic_model": rt.target.synthetic, "transcript": {"thread_id": thread_id, "owner": owner_ref, "before": before, "after": after,
+            **({"usage": usage.as_dict()} if usage is not None else {}), "synthetic_model": rt.target.synthetic, "transcript": {"thread_id": thread_id, "owner": owner_ref, "before": before, "after": after,
                                                                                                     "intruder_trace_status": reading.status_code}}

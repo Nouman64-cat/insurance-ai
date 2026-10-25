@@ -11,6 +11,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { tx } from "@/lib/i18n/tx";
 import { appHref } from "@/lib/appLinks";
+import { getOverview } from "@/lib/evalDrift";
 
 
 
@@ -462,8 +463,8 @@ const NAV_ITEMS = [
         superAdminOnly: true,
       },
       {
-        href: "/super-admin/datasets",
-        label: "Golden Datasets",
+        href: "/super-admin/evaluation",
+        label: "Evaluation Studio",
         icon: (
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
             <ellipse cx="12" cy="5" rx="8" ry="3" />
@@ -473,6 +474,14 @@ const NAV_ITEMS = [
         ),
         badge: null,
         superAdminOnly: true,
+        opensPage: true,          // a click opens the Studio AND shows its four sections; they are hidden again when another menu item is opened
+        autoCollapse: true,
+        subLinks: [
+          { href: "/super-admin/evaluation?tool=datasets", label: "Golden datasets" },
+          { href: "/super-admin/evaluation?tool=drift", label: "Drift review" },
+          { href: "/super-admin/evaluation?tool=costs", label: "Costs & budgets" },
+          { href: "/super-admin/templates", label: "Form templates" },
+        ],
       },
       {
         // Platform administrator only: the audit trail spans every tenant's chain.
@@ -601,6 +610,7 @@ const SECTION_PAGES: { prefix: string; href: string }[] = [
   { prefix: "/case/", href: "/underwriting?tab=pre-underwriting" },
   { prefix: "/post-issuance/", href: "/policy-issuance" },
   { prefix: "/claims/", href: "/claims/register" },
+  { prefix: "/super-admin/evaluation/", href: "/super-admin/evaluation" },
 ];
 
 function activeSidebarHref(pathname: string, searchParams: { get(name: string): string | null }): string {
@@ -617,7 +627,7 @@ function activeSidebarHref(pathname: string, searchParams: { get(name: string): 
       for (const sub of link.subLinks ?? []) {
         const [subPath, subQuery = ""] = String(sub.href).split("?");
         if (subPath !== pathname) continue;
-        if (firstForPath === null) firstForPath = sub.href;
+        if (firstForPath === null && !link.opensPage) firstForPath = sub.href;
         const wanted = Array.from(new URLSearchParams(subQuery).entries());
         if (wanted.length === 0 || !wanted.every(([k, v]) => searchParams.get(k) === v)) continue;
         if (!best || wanted.length > best.score) best = { href: sub.href, score: wanted.length };
@@ -653,6 +663,16 @@ export function Sidebar() {
   const [userName, setUserName] = useState("Saira Reviewer");
   const [userEmail, setUserEmail] = useState("Senior Underwriter");
   const [userRole, setUserRole] = useState("");
+  // Super Admins see how many drift findings are waiting for a decision beside "Drift review"; if the count cannot be read there is simply no badge.
+  const [openDrift, setOpenDrift] = useState(0);
+  useEffect(() => {
+    if (userRole !== "SuperAdmin") return;
+    let live = true;
+    const load = () => getOverview().then((o) => { if (live) setOpenDrift(o.open); }).catch(() => { if (live) setOpenDrift(0); });
+    load();
+    const t = setInterval(load, 300000);
+    return () => { live = false; clearInterval(t); };
+  }, [userRole]);
   const [navMode, setNavMode] = useState<"all" | "working">("all");
   const [expandedMenus, setExpandedMenus] = useState<Record<string, boolean>>({});
 
@@ -668,8 +688,11 @@ export function Sidebar() {
 
     NAV_ITEMS.forEach((g: any) => {
       g.links.forEach((l: any) => {
-        if (l.subLinks && (l.subLinks.some((sub: any) => sub.href === lit) || l.subLinks.some((sub: any) => pathname.startsWith(sub.href.split("?")[0])))) {
+        const inside = !!l.subLinks && (l.subLinks.some((sub: any) => sub.href === lit) || l.subLinks.some((sub: any) => pathname.startsWith(sub.href.split("?")[0])) || (l.opensPage && (pathname === l.href || pathname.startsWith(`${l.href}/`))));
+        if (inside) {
           setExpandedMenus(prev => ({ ...prev, [l.href]: true }));
+        } else if (l.autoCollapse) {
+          setExpandedMenus(prev => (prev[l.href] ? { ...prev, [l.href]: false } : prev));        // another menu item is open: its sections are not shown
         }
       });
     });
@@ -792,6 +815,7 @@ export function Sidebar() {
   }));
 
   const workingHrefs = ["/customer-service", "/acr", "/profile", "/cases", "/requests", "/artifacts", "/live-evaluation", "/case-summarizer", "/assessments", "/underwriting", "/admin/underwriting", "/admin/users", "/admin/leads", "/admin/policyholders", "/plans", "/financial", "/claims", "/claims/dashboard", "/claims/register"];
+  const superAdminHrefs = ["/super-admin/tenants", "/super-admin/admins", "/super-admin/branches", "/super-admin/roles", "/super-admin/tokens", "/super-admin/ai-agents", "/super-admin/llm-config", "/super-admin/evaluation", "/super-admin/templates", "#security-compliance"];
   const superAdminHrefs = ["/super-admin/audit-configuration", "/super-admin/document-forgery", "/super-admin/tenants", "/super-admin/admins", "/super-admin/branches", "/super-admin/roles", "/super-admin/tokens", "/super-admin/ai-agents", "/super-admin/llm-config", "/super-admin/datasets", "#security-compliance"];
 
   const financeIcon = (path: string) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><path d={path}/></svg>;
@@ -891,6 +915,7 @@ export function Sidebar() {
                 {visibleLinks.map((link: any, lIndex: number) => {
                   const specialist = ["Medical Underwriter", "Financial Underwriter"].includes(userRole ?? "");
                   const hasSubLinks = !!link.subLinks && !specialist;
+                  const togglesOnly = hasSubLinks && !link.opensPage;
                   const isActive = activeHref === link.href || (link.subLinks && link.subLinks.some((sub: any) => activeHref === sub.href));
                   const isDraggingThis = draggedItem?.groupIndex === gIndex && draggedItem?.linkIndex === lIndex;
 
@@ -910,12 +935,12 @@ export function Sidebar() {
                       className={`relative group ${isDraggingThis ? "opacity-50 border border-dashed border-slate-300 rounded-xl" : ""}`}
                     >
                       <Link
-                        href={hasSubLinks ? "#" : appHref(link.href)}
+                        href={togglesOnly ? "#" : appHref(link.href)}
                         data-tour={link.href}
                         title={collapsed ? t(`nav.${link.label}`) : undefined}
                         onClick={(e) => {
-                          if (hasSubLinks) toggleSubmenu(e);
-                          else setActiveHref(link.href);
+                          if (togglesOnly) toggleSubmenu(e);
+                          else { setActiveHref(link.href); if (hasSubLinks) setExpandedMenus(prev => ({ ...prev, [link.href]: true })); }
                         }}
                         className={`
                           sidebar-link flex items-center transition-all duration-150 text-[13px]
@@ -992,6 +1017,9 @@ export function Sidebar() {
                                 />
 
                                 <span className="truncate tracking-wide">{t(`nav.${sub.label}`)}</span>
+                                {sub.href.endsWith("tool=drift") && openDrift > 0 && (
+                                  <span data-testid="drift-badge" aria-label={`${openDrift} open drift findings`} className="ms-auto rounded-full bg-amber-100 px-1.5 text-[10px] font-bold text-amber-700">{openDrift > 99 ? "99+" : openDrift}</span>
+                                )}
                               </Link>
                             );
                           })}

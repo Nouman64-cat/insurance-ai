@@ -94,6 +94,7 @@ _RESULT_COLUMNS = [
     ("judge_cost_usd", "DOUBLE PRECISION"), ("ttft_ms", "INTEGER"), ("turns", "INTEGER"), ("critical_failed", "BOOLEAN NOT NULL DEFAULT FALSE"),
     ("layer_scores", "JSONB NOT NULL DEFAULT '{}'::jsonb"), ("verdict", "JSONB NOT NULL DEFAULT '{}'::jsonb"),
     ("trace_summary", "JSONB NOT NULL DEFAULT '{}'::jsonb"), ("trace_key", "VARCHAR(600)"), ("trace_sha256", "VARCHAR(64)"),
+    ("retry_usage", "JSONB"),
 ]
 EVAL_RUN_COLUMNS_DDL = (
     [(f"eval_runs.{c}", f"ALTER TABLE eval_runs ADD COLUMN IF NOT EXISTS {c} {t}") for c, t in _RUN_COLUMNS]
@@ -107,3 +108,79 @@ EVAL_RUN_COLUMNS_DDL = (
         "FOR EACH ROW EXECUTE FUNCTION eval_guard_run_results()")]
 )
 
+
+
+# Phase 6: the change registry and the review queue. History is append-only; the review rules are also CHECK constraints on the table
+# (shared/models/evaluation.py). Every step is safe to run again. Applied by migrate.py as v74NN.
+_APPEND_ONLY_TABLES = ("eval_registry_versions", "eval_drift_scans", "eval_drift_events")
+EVAL_DRIFT_DDL = [
+    ("eval_guard_append_only: function",
+     "CREATE OR REPLACE FUNCTION eval_guard_append_only() RETURNS trigger AS $$ "
+     "BEGIN RAISE EXCEPTION '% is append-only: a row is never changed or removed', TG_TABLE_NAME USING ERRCODE = '23514'; END; $$ LANGUAGE plpgsql"),
+] + [
+    step
+    for table in _APPEND_ONLY_TABLES
+    for step in (
+        (f"{table}: drop old trigger", f"DROP TRIGGER IF EXISTS trg_{table}_append_only ON {table}"),
+        (f"{table}: append-only trigger",
+         f"CREATE TRIGGER trg_{table}_append_only BEFORE UPDATE OR DELETE ON {table} FOR EACH ROW EXECUTE FUNCTION eval_guard_append_only()"),
+    )
+] + [
+    # A CHECK passes when it evaluates to NULL, so a value with no source would have slipped through the first version of this rule.
+    ("eval_drift_items: replace the expected-value rule", "ALTER TABLE eval_drift_items DROP CONSTRAINT IF EXISTS ck_eval_drift_expected_is_reviewers"),
+    ("eval_drift_items: the expected value is always the reviewer's",
+     "ALTER TABLE eval_drift_items ADD CONSTRAINT ck_eval_drift_expected_is_reviewers CHECK (expected IS NULL OR COALESCE(expected_source, '') = 'reviewer')"),
+    ("eval_drift_items: drop old trigger", "DROP TRIGGER IF EXISTS trg_eval_drift_items_no_delete ON eval_drift_items"),
+    ("eval_drift_items: no delete",
+     "CREATE TRIGGER trg_eval_drift_items_no_delete BEFORE DELETE ON eval_drift_items FOR EACH ROW EXECUTE FUNCTION eval_guard_append_only()"),
+]
+
+
+# Editable templates (shared/models/templates.py): a published version never changes; a draft can be edited and discarded.
+TEMPLATE_DDL = [
+    ("document_template_versions: guard function",
+     "CREATE OR REPLACE FUNCTION document_template_guard() RETURNS trigger AS $$ "
+     "BEGIN "
+     "IF TG_OP = 'DELETE' THEN "
+     "  IF OLD.state <> 'draft' THEN RAISE EXCEPTION 'a published template version is never deleted' USING ERRCODE = '23514'; END IF; RETURN OLD; END IF; "
+     "IF OLD.state <> 'draft' THEN "
+     "  IF NEW.content IS DISTINCT FROM OLD.content OR NEW.version <> OLD.version OR NEW.template_id <> OLD.template_id OR NEW.change_note IS DISTINCT FROM OLD.change_note "
+     "     OR NEW.published_by IS DISTINCT FROM OLD.published_by OR NEW.published_at IS DISTINCT FROM OLD.published_at "
+     "  THEN RAISE EXCEPTION 'a published template version is immutable' USING ERRCODE = '23514'; END IF; "
+     "  IF NOT (OLD.state = NEW.state OR (OLD.state = 'published' AND NEW.state = 'superseded')) "
+     "  THEN RAISE EXCEPTION 'a published template version can only become superseded' USING ERRCODE = '23514'; END IF; "
+     "END IF; RETURN NEW; END; $$ LANGUAGE plpgsql"),
+    ("document_template_versions: drop old trigger", "DROP TRIGGER IF EXISTS trg_document_template_guard ON document_template_versions"),
+    ("document_template_versions: trigger",
+     "CREATE TRIGGER trg_document_template_guard BEFORE UPDATE OR DELETE ON document_template_versions FOR EACH ROW EXECUTE FUNCTION document_template_guard()"),
+]
+
+
+# Phase 7: cost lines, budgets, exchange rates and provider statements are append-only (a correction is a new row).
+_COST_APPEND_ONLY = ("eval_cost_lines", "eval_budget_limits", "eval_exchange_rates", "eval_provider_statements", "eval_reconciliations", "eval_compute_rates")
+EVAL_COST_DDL = [
+    ("eval_guard_append_only: function",
+     "CREATE OR REPLACE FUNCTION eval_guard_append_only() RETURNS trigger AS $$ "
+     "BEGIN RAISE EXCEPTION '% is append-only: a row is never changed or removed', TG_TABLE_NAME USING ERRCODE = '23514'; END; $$ LANGUAGE plpgsql"),
+    # M3 added the 'unattributed' component and the repetition column; both are safe to apply again.
+    ("eval_cost_lines: repetition column", "ALTER TABLE eval_cost_lines ADD COLUMN IF NOT EXISTS repetition integer NOT NULL DEFAULT 1"),
+    ("eval_cost_lines: drop the first component rule", "ALTER TABLE eval_cost_lines DROP CONSTRAINT IF EXISTS ck_eval_cost_component"),
+    ("eval_cost_lines: component rule",
+     "ALTER TABLE eval_cost_lines ADD CONSTRAINT ck_eval_cost_component CHECK (component IN "
+     "('candidate_llm','agent_llm','subagent_llm','judge','ocr','embedding','retry','fallback','unattributed','self_hosted'))"),
+    # M4: what the provider's page showed besides the money, and how closely the recorded figure must agree
+    ("eval_provider_statements: billed_input_tokens", "ALTER TABLE eval_provider_statements ADD COLUMN IF NOT EXISTS billed_input_tokens bigint"),
+    ("eval_provider_statements: billed_output_tokens", "ALTER TABLE eval_provider_statements ADD COLUMN IF NOT EXISTS billed_output_tokens bigint"),
+    ("eval_provider_statements: billed_cached_tokens", "ALTER TABLE eval_provider_statements ADD COLUMN IF NOT EXISTS billed_cached_tokens bigint"),
+    ("eval_provider_statements: usage_detail", "ALTER TABLE eval_provider_statements ADD COLUMN IF NOT EXISTS usage_detail jsonb"),
+    ("eval_provider_statements: tolerance_pct", "ALTER TABLE eval_provider_statements ADD COLUMN IF NOT EXISTS tolerance_pct double precision NOT NULL DEFAULT 5"),
+    ("eval_provider_statements: tolerance_usd", "ALTER TABLE eval_provider_statements ADD COLUMN IF NOT EXISTS tolerance_usd double precision NOT NULL DEFAULT 0.05"),
+] + [
+    step
+    for table in _COST_APPEND_ONLY
+    for step in (
+        (f"{table}: drop old trigger", f"DROP TRIGGER IF EXISTS trg_{table}_append_only ON {table}"),
+        (f"{table}: append-only trigger",
+         f"CREATE TRIGGER trg_{table}_append_only BEFORE UPDATE OR DELETE ON {table} FOR EACH ROW EXECUTE FUNCTION eval_guard_append_only()"),
+    )
+]

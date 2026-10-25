@@ -185,6 +185,7 @@ class CaseResult:
     judge_cost_usd: Optional[float] = None
     severity: Optional[str] = None                    # the case's own severity (the quality gate holds critical cases to a stricter standard)
     attempts: int = 1                                 # executions it took (an infrastructure error is retried, a verdict never is)
+    retry_usage: List[Dict[str, Any]] = field(default_factory=list)   # the ledger usage of the earlier attempts that failed: those calls were paid for too
     synthetic_model: bool = False                     # the model was a scripted stand-in: a mechanics result, not a quality result
 
     def as_dict(self) -> Dict[str, Any]:
@@ -203,7 +204,7 @@ def cost_from_usage(usage: Optional[Dict[str, Any]], uses_model: bool) -> tuple[
         return 0.0, True
     total = 0.0
     for model, v in by_model.items():
-        c = cost_of({"model_name": model, "input_tokens": v.get("input_tokens"), "output_tokens": v.get("output_tokens"), "cached_tokens": 0})
+        c = cost_of({"model_name": model, "input_tokens": v.get("input_tokens"), "output_tokens": v.get("output_tokens"), "cached_tokens": v.get("cached_tokens")})
         if c is None:
             return None, False
         total += c

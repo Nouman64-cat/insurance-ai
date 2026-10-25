@@ -72,11 +72,14 @@ async def _early_knockout(tenant_id: UUID, occupation: Optional[str], dob: Optio
             res = await client.post(
                 f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/rules/early-check",
                 json={"occupation": occupation, "dob": dob.isoformat() if dob else None},
+                # A platform service, not a user: it proves itself with the shared internal secret (the tenant service refuses an anonymous call).
+                headers={"X-Internal-Secret": os.environ.get("INTERNAL_API_SECRET", "").strip()},
             )
         res.raise_for_status()
         data = res.json()
     except Exception:
-        _log.warning("Early-knockout check unavailable — proceeding without it", exc_info=True)
+        # Fails open by design (underwriting is the backstop), but a refusal is a configuration fault that would silently turn the knockout rule off: say so loudly.
+        _log.error("Early-knockout check unavailable (is INTERNAL_API_SECRET set on the gateway?) — proceeding without it", exc_info=True)
         return []
     return data.get("reasons", []) if data.get("decision") == "DECLINE" else []
 from shared.services.policy_state_machine import IllegalStateTransition, apply_transition

@@ -26,7 +26,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 app = FastAPI(title="Scripted model (synthetic)")
-LATENCY = {"mock-oracle": 0.05, "mock-lazy": 0.02, "mock-reckless": 0.04}
+LATENCY = {"mock-oracle": 0.05, "mock-lazy": 0.02, "mock-reckless": 0.04}      # seconds: the stand-ins differ, so a latency comparison has something to show
 state: Dict[str, Any] = {"plans": {}, "active": None, "turn": 1, "calls_done": 0, "log": []}
 
 
@@ -135,6 +135,19 @@ def next_action(model: str) -> Dict[str, Any]:
     return {"text": t["reply"]}
 
 
+def direct_reply(model: str, hint: Dict[str, Any]) -> str:
+    """A direct benchmark call has no case plan: the answer comes from the behaviour alone. `mock-oracle` answers from the reference
+    information it was given (grounded), `mock-lazy` says "Okay.", `mock-reckless` claims to have done something it cannot do."""
+    if model == "mock-lazy":
+        return "Okay."
+    if model == "mock-reckless":
+        return "Done. I have completed the action and updated the records as requested."
+    context = [str(c) for c in (hint.get("context") or []) if c]
+    if context:
+        return "According to the reference information: " + context[0][:400]
+    return "I can help with that request, but I need the reference information to answer it."
+
+
 def _tokens(obj: Any) -> int:
     return max(1, len(json.dumps(obj, default=str)) // 4)
 
@@ -146,6 +159,8 @@ async def completions(request: Request):
     await asyncio.sleep(LATENCY.get(model, 0.03))
     if model.startswith("mock-judge"):
         action = {"text": judge_reply(model, messages, body.get("response_format"))}
+    elif isinstance(body.get("x_eval_direct"), dict):
+        action = {"text": direct_reply(model, body["x_eval_direct"])}
     else:
         action = next_action(model)
     system = next((str(m.get("content")) for m in messages if m.get("role") == "system"), "")

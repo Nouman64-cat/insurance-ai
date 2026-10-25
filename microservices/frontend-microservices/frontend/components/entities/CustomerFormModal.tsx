@@ -1,7 +1,7 @@
 "use client";
 
 import { displayDate } from '../../lib/dateDisplay';
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import api, { OCR_BASE_URL } from "@/app/services/api";
@@ -36,6 +36,9 @@ import {
   Policy,
 } from "./customerShared";
 import { tx } from "@/lib/i18n/tx";
+import TemplateFields from "@/components/templates/TemplateFields";
+import { cleanAnswers, EXTRA_TAB_PREFIX, missingRequired, splitTemplate, type Custom } from "@/lib/leadTemplate";
+import { usePublishedTemplate } from "@/lib/useTemplate";
 
 interface Props {
   open: boolean;
@@ -226,7 +229,17 @@ export default function CustomerFormModal({
   // The plan, sum assured and term are chosen on the Insurance Plan tab. A new
   // lead keeps them in details.pending_plan until Create Proposal turns them into the
   // proposal; the Copilot chat creates the proposal straight away.
-  const formTabs = customerTabs;
+  // The Lead acquisition template, as a Super Admin last published it. Its fields and sections that were ADDED in the Templates tab are drawn here
+  // and saved with the customer under details.custom; the form's own fields are unchanged. The template is re-read while the form is open.
+  const leadTemplate = usePublishedTemplate("lead_acquisition", { enabled: open, refreshMs: 15000 });
+  const tplParts = useMemo(() => splitTemplate(leadTemplate.content), [leadTemplate.content]);
+  const formTabs = useMemo(() => {
+    const named = customerTabs.map((t) => ({ ...t, label: tplParts.tabLabels[t.id] ?? t.label }));
+    const extra = tplParts.extraTabs.map((s) => ({ id: EXTRA_TAB_PREFIX + s.id, label: s.title }));
+    const planAt = named.findIndex((t) => t.id === "insurance_plan");
+    return planAt < 0 ? [...named, ...extra] : [...named.slice(0, planAt), ...extra, ...named.slice(planAt)];
+  }, [tplParts]);
+  const [invalidExtra, setInvalidExtra] = useState<string[]>([]);
 
   const {
     register,
@@ -1072,6 +1085,7 @@ export default function CustomerFormModal({
     try {
       const payloadDetails = {
         ...details,
+        ...templatePayload(),
         income_record: {
           ...details.income_record,
           declared_income: data.declaredIncome,
@@ -1209,6 +1223,7 @@ export default function CustomerFormModal({
     try {
       const payloadDetails = {
         ...details,
+        ...templatePayload(),
         income_record: {
           ...details.income_record,
           declared_income: data.declaredIncome || null,
@@ -1320,8 +1335,30 @@ export default function CustomerFormModal({
     }
   };
 
-  const onSubmit = (data: any) =>
-    isCreate ? handleCreateCustomer(data) : handleEditCustomer(data);
+  const customAnswers: Custom = ((details as any).custom ?? {}) as Custom;
+  const setCustomAnswer = (id: string, value: string | number | boolean) =>
+    setDetails((prev: any) => ({
+      ...prev,
+      custom: { ...(prev.custom ?? {}), [id]: value },
+      template: { key: "lead_acquisition", version: leadTemplate.version },
+    }));
+  // What is saved of the template's added fields: only fields that still exist and are visible, with the template version they were answered under.
+  const templatePayload = () =>
+    leadTemplate.content
+      ? { custom: cleanAnswers(leadTemplate.content, customAnswers), template: { key: "lead_acquisition", version: leadTemplate.version } }
+      : {};
+
+  const onSubmit = (data: any) => {
+    const missing = missingRequired(leadTemplate.content, customAnswers);
+    if (missing.length > 0) {
+      setInvalidExtra(missing.map((m) => m.field.id));
+      setFormTab(missing[0].tab);
+      setError(`${tx("Please fill in the required fields")}: ${missing.map((m) => m.field.label).join(", ")}`);
+      return;
+    }
+    setInvalidExtra([]);
+    return isCreate ? handleCreateCustomer(data) : handleEditCustomer(data);
+  };
 
   if (!open) return null;
 
@@ -1428,6 +1465,12 @@ export default function CustomerFormModal({
           </div>
         </div>
 
+        {leadTemplate.changed && (
+          <div className="px-6 py-2 bg-blue-50 border-b border-blue-100 text-xs text-blue-700 flex justify-between" role="status" data-testid="template-updated">
+            <span>{tx("An administrator just updated this form. New fields are shown.")}</span>
+            <button type="button" onClick={leadTemplate.acknowledge} aria-label={tx("Dismiss")}>×</button>
+          </div>
+        )}
         {/* Tab navigation */}
         <div className="px-6 border-b border-slate-100 bg-white flex flex-wrap gap-1">
           {formTabs.map((tab) => (
@@ -3916,6 +3959,24 @@ export default function CustomerFormModal({
               </div>
             </div>
           )}
+          {/* Fields a Super Admin added to this tab in the Templates tab, and tabs they added */}
+          {(tplParts.extraByTab[formTab]?.length ?? 0) > 0 && (
+            <div className="space-y-3 border-t border-slate-100 pt-5" data-testid="template-extra">
+              <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">{tx("Additional information")}</h4>
+              <TemplateFields fields={tplParts.extraByTab[formTab]} values={customAnswers} onChange={setCustomAnswer} invalid={invalidExtra} />
+            </div>
+          )}
+          {formTab.startsWith(EXTRA_TAB_PREFIX) && (() => {
+            const sec = tplParts.extraTabs.find((s) => EXTRA_TAB_PREFIX + s.id === formTab);
+            if (!sec) return null;
+            return (
+              <div className="space-y-3" data-testid="template-extra-tab">
+                {sec.description && <p className="text-xs text-slate-500">{sec.description}</p>}
+                {sec.fields.length === 0 ? <p className="text-xs text-slate-400">{tx("This section has no fields yet.")}</p>
+                  : <TemplateFields fields={sec.fields} values={customAnswers} onChange={setCustomAnswer} invalid={invalidExtra} />}
+              </div>
+            );
+          })()}
         </form>
 
         {/* Footer */}

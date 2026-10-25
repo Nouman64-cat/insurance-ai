@@ -92,7 +92,7 @@ from routers.medical_exam import router as medical_exam_router
 from routers.reinsurance import router as reinsurance_router
 from routers.claims import router as claims_router
 from routers.demo import router as demo_router
-from routers.rules import router as rules_router
+from routers.rules import router as rules_router, early_router as rules_early_router
 from routers.search import router as search_router
 from routers.commissions import router as commissions_router
 from routers.commission_disbursements import router as commission_disbursements_router
@@ -339,6 +339,7 @@ app.include_router(reinsurance_router)
 app.include_router(claims_router)
 app.include_router(demo_router)
 app.include_router(rules_router)
+app.include_router(rules_early_router)
 app.include_router(search_router)
 app.include_router(commissions_router)
 app.include_router(commission_disbursements_router)
@@ -381,8 +382,24 @@ app.include_router(claim_financial_review_router)
 from routers.eval_datasets import router as eval_datasets_router
 app.include_router(eval_datasets_router)
 from routers.eval_jobs import internal as eval_jobs_internal_router, router as eval_jobs_router
+from routers.eval_drift import internal as eval_drift_internal_router, router as eval_drift_router
+app.include_router(eval_drift_router)
+from routers.eval_budget import router as eval_budget_router
+app.include_router(eval_budget_router)
+from routers.eval_costs import router as eval_costs_router
+app.include_router(eval_costs_router)
+from routers.eval_studio import router as eval_studio_router
+app.include_router(eval_studio_router)
+app.include_router(eval_drift_internal_router)
 app.include_router(eval_jobs_router)
 from routers.eval_models import benchmarks as eval_benchmarks_router, router as eval_models_router
+from routers.eval_runs import benchmark_views as eval_benchmark_views_router, results as eval_results_router, runs as eval_runs_router
+from routers.doc_templates import admin as doc_templates_admin_router, reader as doc_templates_reader_router
+app.include_router(doc_templates_admin_router)
+app.include_router(doc_templates_reader_router)
+app.include_router(eval_runs_router)
+app.include_router(eval_results_router)
+app.include_router(eval_benchmark_views_router)   # before the benchmark routes: /eval/benchmarks/history must not be read as a benchmark id
 app.include_router(eval_models_router)
 app.include_router(eval_benchmarks_router)
 app.include_router(eval_jobs_internal_router)   # the worker's side: shared secret, never proxied by the gateway

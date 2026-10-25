@@ -18,9 +18,20 @@ const nextConfig = {
   // Lets client code tell demo from prod (see lib/envMode.ts).
   env: { NEXT_PUBLIC_ENV_VAR: process.env.ENV_VAR || "" },
   async redirects() {
+    // The Evaluation Studio replaced the evaluation pages and their tabs. The old addresses keep working (bookmarks, links in notices): a real HTTP redirect, query string kept.
+    const evaluationCenter = [
+      { source: "/super-admin/datasets", destination: "/super-admin/evaluation?tool=datasets", permanent: false },
+      { source: "/super-admin/drift-monitor", destination: "/super-admin/evaluation?tool=drift", permanent: false },
+      { source: "/super-admin/llm-benchmarking", destination: "/super-admin/evaluation?mode=simulate", permanent: false },
+      { source: "/super-admin/evaluation/datasets", destination: "/super-admin/evaluation?tool=datasets", permanent: false },
+      { source: "/super-admin/evaluation/drift", destination: "/super-admin/evaluation?tool=drift", permanent: false },
+      { source: "/super-admin/evaluation/benchmarking", destination: "/super-admin/evaluation?mode=simulate", permanent: false },
+      { source: "/super-admin/evaluation/costs", destination: "/super-admin/evaluation?tool=costs", permanent: false },
+    ];
     // Pointing the workbench at the portal itself would redirect these pages to themselves forever.
-    if (new URL(UNDERWRITING_URL).origin === new URL(PORTAL_URL).origin) return [];
+    if (new URL(UNDERWRITING_URL).origin === new URL(PORTAL_URL).origin) return evaluationCenter;
     return [
+      ...evaluationCenter,
       ...UNDERWRITING_ROUTES.flatMap((route) => [
         { source: route, destination: `${UNDERWRITING_URL}${route}`, permanent: false },
         { source: `${route}/:path*`, destination: `${UNDERWRITING_URL}${route}/:path*`, permanent: false },

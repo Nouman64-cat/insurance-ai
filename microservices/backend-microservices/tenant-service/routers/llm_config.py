@@ -40,6 +40,8 @@ from routers.auth import verify_superadmin, require_roles
 from routers.tokens import require_internal_service
 from shared.models.core import LLMProviderConfig, LLMTaskModel
 
+from services.internal_auth import check_internal_secret
+
 router = APIRouter(tags=["Platform — LLM Config"])
 
 PROVIDERS = ("gemini", "openai", "anthropic")
@@ -54,6 +56,9 @@ DEFAULT_MODELS = {
     "anthropic": "claude-sonnet-4-5",
 }
 
+# Optional shared secret for the internal endpoint. When set (in .env, shared
+# by all services), GET /internal/llm-config requires a matching header; with no secret configured it is closed (503), never open.
+INTERNAL_API_SECRET = os.environ.get("INTERNAL_API_SECRET", "").strip()
 # Internal reads require a nonempty shared secret, checked by require_internal_service.
 
 
@@ -621,6 +626,7 @@ async def internal_llm_config(
     session: AsyncSession = Depends(get_session),
     x_internal_secret: str = Header(default=""),
 ):
+    check_internal_secret(INTERNAL_API_SECRET, x_internal_secret)          # fails closed: this endpoint returns decrypted provider keys
     require_internal_service(x_internal_secret)
 
     rows = await _all_rows(session)

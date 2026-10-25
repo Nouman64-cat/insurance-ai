@@ -8,6 +8,8 @@ import { demoApplication } from "@/lib/demoWalkIn";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 import type { WalkInLead, WalkInPlan, WalkInProfile } from "@/lib/types";
 import { Applicant, FIELDS, FieldDef, FormState, TABS, TabId, buildProfile, emptyForm, missing, optionKey } from "@/lib/walkinForm";
+import ExtraFields from "@/components/walkin/ExtraFields";
+import { EXTRA_TAB_PREFIX, cleanAnswers, missingRequired, splitTemplate, type Custom, type TemplateContent } from "@/lib/leadTemplate";
 
 const CONTACT = ["Any", "Phone", "WhatsApp", "Email"] as const;
 const DEMO = process.env.NEXT_PUBLIC_WALKIN_DEMO !== "false";
@@ -23,7 +25,25 @@ function ApplyForm() {
   const plans = useApi<{ plans: WalkInPlan[] }>("walk-in/plans");
   const mine = useApi<{ leads: WalkInLead[] }>("walk-in/application");
   const [f, setF] = useState<FormState>(() => ({ ...emptyForm(), plan_id: params.get("plan") || "" }));
-  const [tab, setTab] = useState<TabId>("demographics");
+  const [tab, setTab] = useState<string>("demographics");
+  // The lead form a Super Admin last published. Fields and sections they ADDED are drawn here and sent with the application; the form's own fields are
+  // unchanged. It is read again every 15 seconds and when the window regains focus, so a publish shows up without reloading.
+  const tpl = useApi<{ version: number; content: TemplateContent }>("walk-in/template");
+  const reloadTpl = tpl.reload;
+  useEffect(() => {
+    const t = window.setInterval(reloadTpl, 15000);
+    window.addEventListener("focus", reloadTpl);
+    return () => { window.clearInterval(t); window.removeEventListener("focus", reloadTpl); };
+  }, [reloadTpl]);
+  const [custom, setCustom] = useState<Custom>({});
+  const parts = useMemo(() => splitTemplate(tpl.data?.content), [tpl.data]);
+  const tabsAll = useMemo(() => {
+    const extra = parts.extraTabs.map((s) => EXTRA_TAB_PREFIX + s.id);
+    return [...TABS.filter((k) => k !== "plan"), ...extra, "plan"] as string[];
+  }, [parts]);
+  const tabName = (k: string) => parts.tabLabels[k === "habit" ? "habit_check" : k === "plan" ? "insurance_plan" : k] ?? (k.startsWith(EXTRA_TAB_PREFIX) ? parts.extraTabs.find((s) => EXTRA_TAB_PREFIX + s.id === k)?.title ?? k : t(`walkin.tab.${k}`));
+  const extraGaps = useMemo(() => missingRequired(tpl.data?.content, custom), [tpl.data, custom]);
+  const setAnswer = (id: string, v: string | number | boolean) => setCustom((c) => ({ ...c, [id]: v }));
   const [who, setWho] = useState<Applicant | "Corporate">("Self");
   const key = useRef(newKey());                         // one key per form: a double click or retry can never create a second request
   const [busy, setBusy] = useState(false);
@@ -39,8 +59,8 @@ function ApplyForm() {
   }, [plans.data]);
   const chosen = plans.data?.plans.find((p) => p.id === f.plan_id);
   const gaps = missing(f);
-  const valid = TABS.every((k) => gaps[k].length === 0);
-  const idx = Math.max(TABS.indexOf(tab), 0);
+  const valid = TABS.every((k) => gaps[k].length === 0) && extraGaps.length === 0;
+  const idx = Math.max(tabsAll.indexOf(tab), 0);
 
   // Plan links select the matching type, including unavailable application types.
   useEffect(() => {
@@ -78,7 +98,7 @@ function ApplyForm() {
   }
   const submit = () => {
     if (!valid || who !== "Self" || chosen?.category !== "Individual") return;
-    void send({ applicant_type: "Self", profile: buildProfile(f), plan_id: f.plan_id, preferred_contact: f.preferred_contact, message: String(f.message).trim() || undefined, consent: f.consent });
+    void send({ applicant_type: "Self", profile: buildProfile(f), custom: cleanAnswers(tpl.data?.content, custom), plan_id: f.plan_id, preferred_contact: f.preferred_contact, message: String(f.message).trim() || undefined, consent: f.consent });
   };
 
   function control(d: FieldDef) {
@@ -152,11 +172,11 @@ function ApplyForm() {
       ) : (<>
       <div className="card overflow-hidden">
         <div role="tablist" aria-label={t("walkin.apply.title")} className="flex flex-wrap gap-x-1 border-b border-slate-100 px-3 pt-2">
-          {TABS.map((k) => (
+          {tabsAll.map((k) => (
             <button key={k} role="tab" type="button" aria-selected={tab === k} onClick={() => setTab(k)}
               className={`relative px-3 py-2.5 text-[13px] font-semibold border-b-2 -mb-px ${tab === k ? "border-blue-600 text-blue-700" : "border-transparent text-slate-500 hover:text-slate-800"}`}>
-              {t(`walkin.tab.${k}`)}
-              {gaps[k].length > 0 && <span className="absolute top-1.5 end-0.5 w-1.5 h-1.5 rounded-full bg-amber-500" aria-label={t("walkin.apply.required")} />}
+              {tabName(k)}
+              {((gaps[k as TabId]?.length ?? 0) > 0 || extraGaps.some((g) => g.tab === (k === "habit" ? "habit_check" : k === "plan" ? "insurance_plan" : k))) && <span className="absolute top-1.5 end-0.5 w-1.5 h-1.5 rounded-full bg-amber-500" aria-label={t("walkin.apply.required")} />}
             </button>
           ))}
         </div>
@@ -169,6 +189,9 @@ function ApplyForm() {
               </Field>
             )}
             {tabFields.map(control)}
+            <ExtraFields fields={parts.extraByTab[tab === "habit" ? "habit_check" : tab === "plan" ? "insurance_plan" : tab] ?? parts.extraTabs.find((s) => EXTRA_TAB_PREFIX + s.id === tab)?.fields ?? []}
+              values={custom} onChange={setAnswer} invalid={extraGaps.map((g) => g.field.id)} />
+            {tab.startsWith(EXTRA_TAB_PREFIX) && !(parts.extraTabs.find((s) => EXTRA_TAB_PREFIX + s.id === tab)?.fields.length) && <p className="text-xs text-slate-400 sm:col-span-2">—</p>}
           </div>
 
           {tab === "plan" && (
@@ -201,9 +224,9 @@ function ApplyForm() {
           )}
         </div>
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 bg-slate-50/60 px-5 py-3">
-          <button type="button" className="btn-secondary" disabled={idx === 0} onClick={() => setTab(TABS[idx - 1])}>{t("common.back")}</button>
+          <button type="button" className="btn-secondary" disabled={idx === 0} onClick={() => setTab(tabsAll[idx - 1])}>{t("common.back")}</button>
           <div className="flex items-center gap-2">
-            {idx < TABS.length - 1 && <button type="button" className="btn-secondary" onClick={() => setTab(TABS[idx + 1])}>{t("walkin.apply.next")}</button>}
+            {idx < tabsAll.length - 1 && <button type="button" className="btn-secondary" onClick={() => setTab(tabsAll[idx + 1])}>{t("walkin.apply.next")}</button>}
             <button type="button" className="btn-primary" disabled={!valid || busy} onClick={submit}
               title={valid ? undefined : t("walkin.apply.completeRequired")}>{busy ? <><Spinner />{t("common.submitting")}</> : t("walkin.apply.submit")}</button>
           </div>

@@ -22,6 +22,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from shared.evaluation import cost_lines, cost_store
 from shared.evaluation.canonical import sha256_hex
 from shared.evaluation.pricing import PriceTable, cost_of
 
@@ -130,6 +131,14 @@ async def active_price_table(session) -> tuple[Optional[uuid.UUID], PriceTable]:
     return row.id, PriceTable.from_rates(row.label, row.rates, fallback=PriceTable.builtin())
 
 
+async def _compute_rates(session) -> List[Dict[str, Any]]:
+    """The recorded hourly machine rates (for a run of a self-hosted model); none when none is recorded, in which case machine time is unknown, never free."""
+    from sqlmodel import select
+    from shared.models.evaluation import EvalComputeRate
+    return [{"name": r.name, "resource": r.resource, "usd_per_hour": r.usd_per_hour, "effective_from": r.effective_from, "source": r.source, "created_at": r.created_at}
+            for r in (await session.exec(select(EvalComputeRate))).all()]
+
+
 async def ingest_run(lake, folder: Path, *, ingested_by: Optional[uuid.UUID] = None) -> IngestReport:
     """Verify a sealed run folder and write it to MinIO and PostgreSQL. Idempotent; see the module docstring."""
     from sqlalchemy import delete
@@ -207,9 +216,11 @@ async def ingest_run(lake, folder: Path, *, ingested_by: Optional[uuid.UUID] = N
         session.add(run)
         await session.flush()
 
+        compute_rates = await _compute_rates(session)
         n_assert = n_metric = 0
         case_costs: Dict[str, Dict[str, Any]] = {}
-        known_cost, unknown_cost = 0.0, 0
+        all_lines: List[Dict[str, Any]] = []
+        mode = cfg.get("mode") or ("direct" if cfg.get("kind") == "benchmark_direct" else "agent")
         counts = {s: 0 for s in ("passed", "failed", "blocked", "skipped", "infrastructure_error")}
         for r in results:
             counts[r["status"]] = counts.get(r["status"], 0) + 1
@@ -217,10 +228,9 @@ async def ingest_run(lake, folder: Path, *, ingested_by: Optional[uuid.UUID] = N
             cost, basis = reprice(usage, table)
             if r["status"] in ("skipped", "blocked") and usage is None:
                 cost, basis = 0.0, COST_BASIS_NONE
-            if cost is None:
-                unknown_cost += 1
-            else:
-                known_cost += cost + (r.get("judge_cost_usd") or 0.0)
+            mine = cost_lines.lines_for_result(run_id, r, table=table, candidate=cfg.get("model_id"), mode=mode, synthetic=bool(cfg.get("synthetic_model")), pricing_version_id=ledger_version,
+                                               compute_rates=compute_rates, at=run.started_at)
+            all_lines += mine
             artifact = r.get("artifact")
             row = EvalCaseResult(
                 id=uuid.uuid4(), run_row_id=row_id, case_key=r["case_id"], category=r.get("category"), operation=r.get("operation"),
@@ -229,7 +239,7 @@ async def ingest_run(lake, folder: Path, *, ingested_by: Optional[uuid.UUID] = N
                 assertion_counts=r.get("assertion_counts") or {}, error=r.get("error"),
                 artifact_key=keys.get(artifact) if artifact else None, artifact_sha256=_sha(manifest, artifact),
                 model_id=r.get("model_id"), input_tokens=r.get("input_tokens"), output_tokens=r.get("output_tokens"), cached_tokens=r.get("cached_tokens"),
-                llm_calls=r.get("llm_calls"), judge_cost_usd=r.get("judge_cost_usd"), ttft_ms=r.get("ttft_ms"), turns=r.get("turns"),
+                llm_calls=r.get("llm_calls"), judge_cost_usd=r.get("judge_cost_usd"), retry_usage=r.get("retry_usage") or None, ttft_ms=r.get("ttft_ms"), turns=r.get("turns"),
                 critical_failed=bool(r.get("critical_failed")), layer_scores=r.get("layer_scores") or {}, verdict=r.get("verdict") or {},
                 trace_summary=r.get("trace_summary") or {}, trace_key=keys.get(r.get("trace_artifact")) if r.get("trace_artifact") else None,
                 trace_sha256=_sha(manifest, r.get("trace_artifact")))
@@ -256,22 +266,24 @@ async def ingest_run(lake, folder: Path, *, ingested_by: Optional[uuid.UUID] = N
                                             judge_model=m.get("judge_model"), judge_cost_usd=m.get("judge_cost_usd"),
                                             input_tokens=m.get("input_tokens"), output_tokens=m.get("output_tokens")))
                 n_metric += 1
-            if usage and (usage.get("calls") or r.get("judge_cost_usd")):
-                # One cost record per case and pricing version (the table's rule), so a case run several times is summed.
-                by_model = usage.get("by_model") or {}
+            if mine and ((usage and usage.get("calls")) or r.get("judge_cost_usd") or r.get("retry_usage")):      # no usage, no cost record is invented (the cost lines carry the unknown)
+                # One cost record per case and pricing version (the table's rule), so a case run several times is summed. Its figures are the sums of the
+                # execution's cost lines, so the record, the lines and the run's total can never disagree.
                 c = case_costs.setdefault(r["case_id"], {"models": set(), "input": 0, "output": 0, "cached": 0, "calls": 0, "llm": 0.0, "judge": 0.0,
                                                          "judge_in": 0, "judge_out": 0, "repetitions": 0, "basis": set()})
-                c["models"].update(by_model)
-                c["input"] += int(usage.get("input_tokens") or 0)
-                c["output"] += int(usage.get("output_tokens") or 0)
-                c["cached"] += int(usage.get("cached_tokens") or 0)
-                c["calls"] += int(usage.get("calls") or 0)
-                c["llm"] += cost or 0.0
-                c["judge"] += r.get("judge_cost_usd") or 0.0
-                c["judge_in"] += sum(m.get("input_tokens") or 0 for m in r.get("metric_scores") or [])
-                c["judge_out"] += sum(m.get("output_tokens") or 0 for m in r.get("metric_scores") or [])
+                own = [l for l in mine if l["component"] != "judge"]
+                judge = [l for l in mine if l["component"] == "judge"]
+                c["models"].update(l["model"] for l in own if l["model"])
+                c["input"] += sum(l["input_units"] for l in own)
+                c["output"] += sum(l["output_units"] for l in own)
+                c["cached"] += sum(l["cached_units"] for l in own)
+                c["calls"] += int((usage or {}).get("calls") or 0) + sum(int(u.get("calls") or 0) for u in r.get("retry_usage") or [])
+                c["llm"] += cost_lines.known_total(own)
+                c["judge"] += cost_lines.known_total(judge)
+                c["judge_in"] += sum(l["input_units"] for l in judge)
+                c["judge_out"] += sum(l["output_units"] for l in judge)
                 c["repetitions"] += 1
-                c["basis"].add(basis)
+                c["basis"].add(COST_BASIS_UNKNOWN if any(l["cost_kind"] == "unknown" for l in own) else COST_BASIS_CALCULATED if own else COST_BASIS_NONE)
         for case_id, c in case_costs.items():
             basis = COST_BASIS_UNKNOWN if COST_BASIS_UNKNOWN in c["basis"] else COST_BASIS_CALCULATED if COST_BASIS_CALCULATED in c["basis"] else COST_BASIS_NONE
             session.add(EvalCostRecord(
@@ -283,7 +295,8 @@ async def ingest_run(lake, folder: Path, *, ingested_by: Optional[uuid.UUID] = N
         run.executions, run.passed, run.failed, run.blocked, run.skipped = len(results), counts["passed"], counts["failed"], counts["blocked"], counts["skipped"]
         run.infrastructure_errors = counts["infrastructure_error"]
         run.pass_rate = (counts["passed"] / ran) if ran else None
-        run.known_cost_usd, run.unknown_cost_executions = round(known_cost, 6), unknown_cost
+        run.known_cost_usd, run.unknown_cost_executions = round(cost_lines.known_total(all_lines), 6), cost_lines.unknown_executions(all_lines)
+        await cost_store.store_lines(session, all_lines, job_id=run.job_id, incurred_at=run.started_at)       # idempotent: a line is recorded once, so a crashed run ingested again adds nothing twice
         if summary.get("by_status") and {k: summary["by_status"].get(k, 0) for k in counts} != counts:
             problems.append("the totals in summary.json differ from the rows of results.jsonl; the rows were used")
         run.summary = {**summary, "ingest": {"manifest_sha256": manifest_sha, "pricing_label": table.label, "ingested_at": datetime.utcnow().isoformat() + "Z",

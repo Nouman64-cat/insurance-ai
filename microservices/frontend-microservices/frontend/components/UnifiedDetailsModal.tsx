@@ -9,6 +9,7 @@ import CustomerFormModal from "@/components/entities/CustomerFormModal";
 import FamilyFormModal from "@/components/entities/FamilyFormModal";
 import OrganizationFormModal from "@/components/entities/OrganizationFormModal";
 import { tx } from "@/lib/i18n/tx";
+import { usePublishedTemplate } from "@/lib/useTemplate";
 
 type EntityType = "INDIVIDUAL" | "FAMILY" | "CORPORATE";
 
@@ -171,6 +172,27 @@ function InfoGrid({ rows }: { rows: [string, string | null | undefined][] }) {
         </div>
       ))}
     </dl>
+  );
+}
+
+/** What a Super Admin added to the lead form in the Templates tab: the customer's answers, with the questions as they are worded now. Answers to a
+ *  field that has since been removed are still shown (under its id), because they are still stored. */
+function AdditionalInformation({ details }: { details: any }) {
+  const custom: Record<string, unknown> = details?.custom && typeof details.custom === "object" ? details.custom : {};
+  const has = Object.keys(custom).length > 0;
+  const tpl = usePublishedTemplate("lead_acquisition", { enabled: has, refreshMs: 0 });
+  if (!has) return null;
+  const labels: Record<string, string> = {};
+  for (const sec of tpl.content?.sections ?? []) for (const f of sec.fields) labels[f.id] = f.label;
+  const show = (v: unknown) => (v === true ? tx("Yes") : v === false ? tx("No") : v == null || v === "" ? null : String(v));
+  const rows = Object.entries(custom).map(([k, v]) => [labels[k] ?? k.replace(/_/g, " "), show(v)] as [string, string | null]);
+  return (
+    <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100" data-testid="additional-information">
+      <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">
+        {tx("Additional information")}{details?.template?.version ? ` · ${tx("form version")} ${details.template.version}` : ""}
+      </h3>
+      <InfoGrid rows={rows} />
+    </div>
   );
 }
 
@@ -602,6 +624,8 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
                 )}
 
                 {exited && <ExitedProfile data={data} policy={exited} />}
+
+                {entityType === "INDIVIDUAL" && <AdditionalInformation details={data.details} />}
 
                 {/* Relationship / Roster Data */}
                 {!exited && <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 min-h-[300px]">

@@ -27,7 +27,7 @@ HERE = Path(__file__).resolve().parent
 COMPOSE = ["docker", "compose", "-p", "insurance-ai-eval", "-f", str(HERE / "docker-compose.eval.yml"),
            "--env-file", str(HERE / "eval.env")]
 ENV_FILE = HERE / "eval.env"
-BACKEND = ["eval-postgres", "eval-tenant-service", "eval-api-gateway", "eval-ocr-engine", "eval-mock-llm", "eval-judge", "eval-chat-agent"]
+BACKEND = ["eval-postgres", "eval-egress-proxy", "eval-tenant-service", "eval-api-gateway", "eval-ocr-engine", "eval-mock-llm", "eval-judge", "eval-chat-agent"]
 
 
 def provision() -> int:
@@ -165,7 +165,7 @@ def ingest_after(status: int, ingest: bool, group: bool = False, benchmark: bool
     if group:
         for run_id in group_run_ids():
             status = ingest_run(run_id, status)
-        return ingest_benchmark(status) if benchmark else status
+        return ingest_benchmark(status) if benchmark and status != 3 else status
     found = subprocess.run(["docker", "exec", "eval-runner", "sh", "-c", "ls -t /work/runs | grep -E '^[0-9]{8}T' | head -1"], capture_output=True, text=True)
     run_id = found.stdout.strip()
     if not run_id:
@@ -207,6 +207,8 @@ def main(argv: list[str]) -> int:
         return compose("exec", "-T", "eval-runner", "python", "-m", "evals.tools.test_runs_integration", *rest)
     if cmd == "test-chat":
         return compose("exec", "-T", "eval-runner", "python", "-m", "evals.tools.test_chat_integration", *rest)
+    if cmd == "test-benchmark":
+        return compose("exec", "-T", "eval-runner", "python", "-m", "evals.tools.test_benchmark_integration", *rest)
     if cmd == "test-runner":
         return compose("exec", "-T", "eval-runner", "python", "-m", "evals.tools.test_runner_integration", *rest)
     if cmd == "run":

@@ -50,6 +50,14 @@ class ScoreRequest(BaseModel):
     judge_model: str
 
 
+class GenerateRequest(BaseModel):
+    model: str                                    # provider/model
+    messages: List[Dict[str, str]]
+    settings: Dict[str, Any] = Field(default_factory=dict)      # temperature, top_p, max_tokens, seed
+    timeout_s: float = Field(default=120.0, gt=0, le=900)
+    mock_hint: Optional[Dict[str, Any]] = None
+
+
 class NoCredentials(Exception):
     pass
 
@@ -174,6 +182,17 @@ def score_sync(req: ScoreRequest) -> Dict[str, Any]:
 @app.post("/score")
 async def score(req: ScoreRequest):
     return await run_in_threadpool(score_sync, req)
+
+
+@app.post("/generate")
+async def generate_endpoint(req: GenerateRequest):
+    """One candidate answer for a direct benchmark. Same provider rules as scoring."""
+    import generate as gen
+    try:
+        cfg = endpoint_for(req.model)
+    except NoCredentials as exc:
+        return {"status": "blocked_missing_credentials", "error": str(exc)}
+    return await gen.generate(cfg, req.messages, req.settings, timeout_s=req.timeout_s, mock=req.model.lower().startswith("mock/"), mock_hint=req.mock_hint)
 
 
 @app.get("/health")

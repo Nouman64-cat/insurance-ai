@@ -94,6 +94,11 @@ def prepare() -> None:
             self.status_code, self.detail = status_code, detail
     fastapi.HTTPException = HTTPException
     sys.modules.setdefault("fastapi", fastapi)
+    # The policy state machine now records an outbox event on every transition. The checks here only ask whether a transition is legal, and the
+    # outbox is a database table that cannot be built from the empty `sqlmodel` stand-in above, so it is replaced by one that does nothing.
+    outbox = _dummy_module("shared.events.outbox")
+    outbox.enqueue_policy_event = lambda *a, **kw: None
+    sys.modules["shared.events.outbox"] = outbox
     skills = types.ModuleType("skills")
     skills.enabled = lambda: True
     sys.modules["skills"] = skills

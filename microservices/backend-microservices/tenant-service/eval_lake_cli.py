@@ -20,10 +20,15 @@
     docker compose exec tenant-service python eval_lake_cli.py run-ingest /tmp/run-folder     # keep a finished evaluation run (database + MinIO)
     docker compose exec tenant-service python eval_lake_cli.py runs [--dataset SLUG] [--limit N]
     docker compose exec tenant-service python eval_lake_cli.py run <run id> [--report]
+    docker compose exec tenant-service python eval_lake_cli.py run-verify <run id>          # re-check every stored file of a run against its recorded checksum
+    docker compose exec tenant-service python eval_lake_cli.py run-compare <run a> <run b>   # a is the baseline: what got worse, what got better, cost and latency
     docker compose exec tenant-service python eval_lake_cli.py reconcile
     docker compose exec -T tenant-service python eval_lake_cli.py job-submit --as-user admin@example.com --config - < job.json    # queue an evaluation run
     docker compose exec tenant-service python eval_lake_cli.py jobs | job <id> | job-events <id> [--follow] | job-cancel <id>
     docker compose exec tenant-service python eval_lake_cli.py models-seed | models | benchmark-ingest <benchmark.json> | benchmarks
+    docker compose exec tenant-service python eval_lake_cli.py cost-statements | cost-statement-add --as-user EMAIL --provider openai --from 2026-10-01 --to 2026-10-31 --billed 0.64 --source "..." | cost-reconcile ID --as-user EMAIL
+    docker compose exec tenant-service python eval_lake_cli.py cost-backfill [--run ID] | cost-attribution [--run ID]       # cost lines of older runs; is every run's spending attributed exactly once
+    docker compose exec tenant-service python eval_lake_cli.py drift-ingest <scan.json> | drift-registry | drift-deps-load <slug> <version> <file>
     python evals/environment/envctl.py worker [--once]                                                        # on the host: runs the queued jobs
 
 The browser-based Dataset Manager (a later stage) uses the same DataLake; this is for setup, checks and recovery.
@@ -211,9 +216,78 @@ async def run(args) -> int:
                 print(f"{m.provider}/{m.model_id:28} {m.status:10} {'SYNTHETIC ' if m.synthetic else ''}{','.join(m.roles):16} "
                       + (f"${p.input_per_m}/{p.cached_per_m}/{p.output_per_m} per M tokens" if p else "no price"))
             return 0
+        if args.command in ("cost-statements", "cost-statement-add", "cost-reconcile"):
+            from datetime import date as _date
+            from fastapi import HTTPException
+            from services import eval_reconcile
+            try:
+                if args.command == "cost-statements":
+                    for x in await eval_reconcile.list_statements(session):
+                        live = x["live"]
+                        print(f"{x['id']}  {x['provider']:<9} {x['period_start']}..{x['period_end']}  billed ${x['billed_usd']:.4f}  " + ("replaced by a later statement" if live is None else
+                              f"recorded ${live['recorded_usd']:.4f}  difference ${live['difference_usd']:+.4f}  {live['status'].upper()}") + (f"  [{x['reference']}]" if x["reference"] else ""))
+                    return 0
+                actor = await _user_id(session, args.as_user)
+                if args.command == "cost-statement-add":
+                    out = await eval_reconcile.create_statement(
+                        session, actor_id=actor, provider=args.provider, period_start=_date.fromisoformat(args.start), period_end=_date.fromisoformat(args.end), billed_usd=args.billed,
+                        reference=args.reference, source=args.source, billed_tokens={"input": args.input_tokens, "output": args.output_tokens, "cached": args.cached_tokens},
+                        tolerance_pct=args.tolerance_pct, tolerance_usd=args.tolerance_usd, supersedes_id=UUID(args.replaces) if args.replaces else None, note=args.note)
+                    result = out["reconciliation"]
+                    print(f"statement {out['statement']['id']}")
+                else:
+                    from shared.models.evaluation import EvalProviderStatement
+                    st = await session.get(EvalProviderStatement, UUID(args.statement_id))
+                    if st is None:
+                        raise LakeValidationError("no such statement")
+                    result = await eval_reconcile.reconcile(session, st, actor_id=actor, note=args.note)
+                await session.commit()
+            except HTTPException as exc:
+                await session.rollback()
+                raise LakeValidationError(str(exc.detail if isinstance(exc.detail, str) else exc.detail.get("message")))
+            print(f"{result['status'].upper()}: billed ${result['billed_usd']:.4f}, recorded ${result['recorded_usd']:.4f}, difference ${result['difference_usd']:+.4f} ({result['difference_pct']:+.1f}%)")
+            for line in result["explanation"]:
+                print(f"  - {line}")
+            return 0
+        if args.command == "cost-backfill":
+            from services import eval_costs
+            out = await eval_costs.backfill(session, args.run)
+            await session.commit()
+            print(json.dumps({k: v for k, v in out.items() if k != "per_run"}) + ("" if not args.verbose else "\n" + json.dumps(out["per_run"], indent=1)))
+            return 0
+        if args.command == "cost-attribution":
+            from services import eval_costs
+            out = await eval_costs.attribution(session, args.run)
+            for r in out["runs"]:
+                print(f"{r['run_id']:<34} {r['kind']:<17} lines {r['lines']:>4}  lines ${r['known_usd']:.6f}  run ${r['recorded_usd']:.6f}  " + ("OK" if not r["problems"] else "PROBLEMS: " + " | ".join(r["problems"][:3])))
+            print(f"{out['checked']} run(s) checked, {out['with_problems']} with problems")
+            return 1 if out["with_problems"] else 0
+        if args.command == "drift-ingest":
+            from services import eval_drift
+            report = json.loads(Path(args.file).read_text(encoding="utf-8"))
+            out = await eval_drift.ingest_scan(session, report)
+            await session.commit()
+            print(json.dumps(out))
+            return 0
+        if args.command == "drift-registry":
+            from services import eval_drift
+            out = await eval_drift.scan_registry(session, captured_from="cli")
+            await session.commit()
+            print(json.dumps(out, default=str))
+            return 0
+        if args.command == "drift-deps-load":
+            from services import eval_registry
+            data = json.loads(Path(args.file).read_text(encoding="utf-8"))
+            known = [o["key"] for o in await eval_registry.read_all(session)]
+            n = await eval_registry.load_dependencies(session, args.slug, args.version, data["dependencies"], known)
+            await session.commit()
+            print(f"stored {n} dependencies for {args.slug} {args.version}")
+            return 0
         if args.command == "benchmark-ingest":
             data = json.loads(Path(args.file).read_text(encoding="utf-8"))
             bid = data["benchmark_id"]
+            if not data.get("valid", False):
+                raise LakeValidationError(f"benchmark {bid} is not valid and is not stored: " + "; ".join(data.get("problems") or ["it carries no validity check"]))
             if (await session.exec(select(EvalBenchmark).where(EvalBenchmark.benchmark_id == bid))).first():
                 print(f"benchmark {bid} is already stored; nothing changed")
                 return 0
@@ -236,6 +310,37 @@ async def run(args) -> int:
             for b in (await session.exec(select(EvalBenchmark).order_by(EvalBenchmark.created_at.desc()).limit(20))).all():
                 print(f"{b.benchmark_id:34} {b.mode:7} {b.dataset_slug} {b.dataset_version}  x{b.repetitions}  {len(b.models)} model(s)  "
                       f"{'SYNTHETIC ' if b.synthetic else ''}{'complete' if b.complete else 'INCOMPLETE'}")
+            return 0
+        if args.command == "run-verify":
+            from shared.evaluation import run_tools
+            try:
+                rep = await run_tools.verify(session, lake, args.run_id)
+            except run_tools.RunToolError as exc:
+                raise LakeValidationError(str(exc))
+            print(f"{'OK  ' if rep['ok'] else 'FAIL'} {rep['run_id']}  {rep['objects_checked']} stored files, {rep['result_rows']} of {rep['executions']} result rows")
+            for p_ in rep["problems"]:
+                print(f"  problem: {p_}")
+            return 0 if rep["ok"] else 1
+        if args.command == "run-compare":
+            from shared.evaluation import run_tools
+            try:
+                c = await run_tools.compare(session, args.run_a, args.run_b)
+            except run_tools.RunToolError as exc:
+                raise LakeValidationError(str(exc))
+            pct_ = lambda x: "-" if x is None else f"{x * 100:.1f}%"  # noqa: E731
+            usd_ = lambda x: "-" if x is None else f"${x:+.4f}"  # noqa: E731
+            print(f"A {c['a_run']['run_id']}  {c['a_run']['model']}  {c['a_run']['dataset']} {c['a_run']['version']}   pass {pct_(c['a']['pass_rate'])}  ({c['a']['passed']}/{c['a']['ran']})")
+            print(f"B {c['b_run']['run_id']}  {c['b_run']['model']}  {c['b_run']['dataset']} {c['b_run']['version']}   pass {pct_(c['b']['pass_rate'])}  ({c['b']['passed']}/{c['b']['ran']})")
+            d = c["delta"]
+            pts = "-" if d["pass_rate"] is None else f"{d['pass_rate'] * 100:+.1f} points"
+            lat = "-" if d["latency_p50_ms"] is None else f"{d['latency_p50_ms']:+.0f} ms"
+            print(f"  pass rate {pts}   cost {usd_(d['cost_usd'])}   latency p50 {lat}")
+            print(f"  {c['cases_compared']} cases compared: {len(c['newly_failing'])} newly failing, {len(c['newly_passing'])} newly passing, {len(c['changed'])} other changes, {c['unchanged']} unchanged")
+            for label, key in (("newly failing", "newly_failing"), ("newly passing", "newly_passing"), ("other change", "changed")):
+                for x in c[key]:
+                    print(f"  {label:14} {x['case']}  {x['a']} -> {x['b']}")
+            for n_ in c["notes"]:
+                print(f"  note: {n_}")
             return 0
         if args.command == "run-reliability":
             r = (await session.exec(select(EvalRun).where(EvalRun.run_id == args.run_id))).first()
@@ -414,7 +519,21 @@ def main() -> int:
     r1 = sub.add_parser("run"); r1.add_argument("run_id"); r1.add_argument("--report", action="store_true")
     sub.add_parser("models-seed"); sub.add_parser("models"); sub.add_parser("benchmarks")
     bi = sub.add_parser("benchmark-ingest"); bi.add_argument("file")
+    sub.add_parser("cost-statements")
+    sa = sub.add_parser("cost-statement-add"); sa.add_argument("--as-user", required=True); sa.add_argument("--provider", required=True, choices=("openai", "anthropic", "gemini"))
+    sa.add_argument("--from", dest="start", required=True, help="first day of the period, YYYY-MM-DD"); sa.add_argument("--to", dest="end", required=True, help="last day of the period (inclusive)")
+    sa.add_argument("--billed", type=float, required=True, help="what the provider billed, in USD"); sa.add_argument("--source", required=True, help="where the figure came from")
+    sa.add_argument("--reference"); sa.add_argument("--input-tokens", type=int); sa.add_argument("--output-tokens", type=int); sa.add_argument("--cached-tokens", type=int)
+    sa.add_argument("--tolerance-pct", type=float, default=5.0); sa.add_argument("--tolerance-usd", type=float, default=0.05); sa.add_argument("--replaces"); sa.add_argument("--note")
+    rc_ = sub.add_parser("cost-reconcile"); rc_.add_argument("statement_id"); rc_.add_argument("--as-user", required=True); rc_.add_argument("--note")
+    cb = sub.add_parser("cost-backfill"); cb.add_argument("--run"); cb.add_argument("--verbose", action="store_true")
+    ca = sub.add_parser("cost-attribution"); ca.add_argument("--run")
+    di = sub.add_parser("drift-ingest"); di.add_argument("file")
+    sub.add_parser("drift-registry")
+    dd = sub.add_parser("drift-deps-load"); dd.add_argument("slug"); dd.add_argument("version"); dd.add_argument("file")
     rr = sub.add_parser("run-reliability"); rr.add_argument("run_id")
+    rv_ = sub.add_parser("run-verify"); rv_.add_argument("run_id")
+    rcm = sub.add_parser("run-compare"); rcm.add_argument("run_a"); rcm.add_argument("run_b")
     c = sub.add_parser("create-dataset"); c.add_argument("slug"); c.add_argument("--name", required=True)
     c.add_argument("--workflow", required=True); c.add_argument("--turn-mode", required=True, choices=["single_turn", "multi_turn"])
     i = sub.add_parser("ingest"); i.add_argument("slug"); i.add_argument("file")

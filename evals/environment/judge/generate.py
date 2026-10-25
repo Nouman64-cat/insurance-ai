@@ -59,8 +59,8 @@ class StreamState:
         u = self.usage or {}
         details = u.get("prompt_tokens_details") or {}
         return {"text": "".join(self.parts), "finish_reason": self.finish_reason, "returned_model": self.model,
-                "latency_ms": int((ended - self.started) * 1000),
-                "ttft_ms": int((self.first_token_at - self.started) * 1000) if self.first_token_at is not None else None,
+                "latency_ms": round((ended - self.started) * 1000),
+                "ttft_ms": round((self.first_token_at - self.started) * 1000) if self.first_token_at is not None else None,
                 "input_tokens": u.get("prompt_tokens"), "output_tokens": u.get("completion_tokens"),
                 "cached_tokens": details.get("cached_tokens") if isinstance(details, dict) else None}
 

@@ -132,7 +132,17 @@ class Runner:
         by: Dict[str, int] = {}
         for r in self.results:
             by[r.status] = by.get(r.status, 0) + 1
-        return {"executions": len(self.results), "by_status": by, "spent_usd": round(self.spent_usd, 6)}
+        return {"executions": len(self.results), "by_status": by, "spent_usd": round(self.spent_usd, 6), "model": self.args.model, "planned": getattr(self, "planned", None)}
+
+    def _reply_excerpt(self, result: CaseResult, limit: int = 400) -> Optional[str]:
+        """The start of what the model answered, for the live monitor. The full answer and trace are in the run's artifacts."""
+        if not result.artifact:
+            return None
+        try:
+            text = (json.loads((self.out / result.artifact).read_text()).get("observation") or {}).get("response", {}).get("text")
+        except (OSError, ValueError, AttributeError):
+            return None
+        return None if not text else (text if len(text) <= limit else text[:limit] + "…")
 
     @property
     def chat_state(self) -> str:
@@ -153,13 +163,21 @@ class Runner:
                           verification=verification_of(case), status=status, reason=reason, repetition=repetition, severity=case.get("severity"),
                           synthetic_model=bool(self.target and self.target.synthetic and is_chat(case)), **extra)
 
+    @staticmethod
+    def _total_cost(result: CaseResult) -> float:
+        """Everything this execution spent that is known: the model's calls, the judge, and the calls of attempts that failed and were run again. The platform adds these up
+        while a job runs, to stop it when a daily or monthly spending limit would be passed."""
+        retries = sum((cost_from_usage(u, True)[0] or 0.0) for u in (result.retry_usage or []))
+        return round((result.cost_usd or 0.0) + (result.judge_cost_usd or 0.0) + retries, 6)
+
     def _record(self, result: CaseResult) -> CaseResult:
         self.results.append(result)
         with (self.out / "results.jsonl").open("a", encoding="utf-8") as f:           # appended now, not at the end: a cancel or a crash loses nothing
             f.write(json.dumps(result.as_dict(), default=str) + "\n")
         self.event("case", f"{result.case_id} r{result.repetition}: {result.status}" + (f" ({result.reason})" if result.reason else ""),
                    case_id=result.case_id, repetition=result.repetition, status=result.status, reason=result.reason, latency_ms=result.latency_ms,
-                   cost_usd=result.cost_usd, critical_failed=result.critical_failed, attempts=result.attempts)
+                   cost_usd=result.cost_usd, judge_cost_usd=result.judge_cost_usd, total_cost_usd=self._total_cost(result), critical_failed=result.critical_failed, attempts=result.attempts, model=self.args.model, stage=result.category,
+                   input_tokens=result.input_tokens, output_tokens=result.output_tokens, reply=self._reply_excerpt(result))
         self.event("progress", **self.progress())
         reason = stats.should_stop_on_critical([r.as_dict() for r in self.results], enabled=self.args.stop_on_critical)
         if reason and not self.cancel.is_set():
@@ -209,15 +227,43 @@ class Runner:
             return self._record(self._make(case, repetition, "blocked", "invalid_input", error="; ".join(problems)[:500]))
         self.event("log", f"{case['case_id']} r{repetition}: starting")
         attempt = 0
+        paid_before: List[Dict[str, Any]] = []                     # what the attempts that failed had already spent
         while True:
             attempt += 1
             result = await self._execute_once(case, repetition)
             if result.status == "infrastructure_error" and attempt <= self.args.retries and not self.cancel.is_set():
+                if result.usage and result.usage.get("calls"):
+                    paid_before.append(result.usage)
                 self.event("log", f"{case['case_id']} r{repetition}: infrastructure error ({result.reason}); retrying ({attempt}/{self.args.retries})")
                 await asyncio.sleep(min(2.0 * attempt, 10.0))
                 continue
             result.attempts = attempt
+            result.retry_usage = paid_before
             return self._record(result)
+
+    async def _settle(self) -> Optional[Dict[str, Any]]:
+        """An execution that failed may already have asked a model for something, and that was paid for. Read what the ledger shows before the next
+        execution resets it; None when nothing was spent. The spend counts toward the run's budget."""
+        if self.meter is None:
+            return None
+        try:
+            lost = await self.meter.settle_abandoned()
+        except Exception:                                                        # noqa: BLE001 - an unreadable ledger leaves the failure as it was
+            return None
+        if lost is None or lost.status != "attributed" or not lost.calls:
+            return None
+        cost, known = cost_from_usage(lost.as_dict(), True)
+        if cost:
+            self.spent_usd += cost
+        return lost.as_dict()
+
+    def _turn_guard(self, turn: int) -> Optional[str]:
+        """Asked before every turn after the first of a real-model conversation: would this turn still fit in the run's budget? Money already spent counts, and so does an estimate for
+        the turns this conversation has had so far (their real cost is only known when it ends). A scripted model costs nothing, so it is never stopped."""
+        budget = self.args.budget_usd
+        if budget is None or (self.target and self.target.synthetic):
+            return None
+        return None if stats.can_afford(self.spent_usd + CHAT_TURN_ESTIMATE_USD * (turn - 1), CHAT_TURN_ESTIMATE_USD, budget) else "budget_exceeded"
 
     async def _execute_once(self, case: dict, repetition: int) -> CaseResult:
         chat = is_chat(case)
@@ -249,7 +295,7 @@ class Runner:
                 if chat:
                     resolved = resolve_case(case, self.env.ids)
                     rt = ChatRuntime(client=self.client, chat_url=CHAT_URL, mock_url=MOCK_URL, api_url=API, env=self.env, login=self._login, target=self.target,
-                                     meter=self.meter, timeout=float(self.args.chat_timeout))
+                                     meter=self.meter, timeout=float(self.args.chat_timeout), turn_guard=self._turn_guard)
                     return await execute_chat_case(resolved, rt, execution_id=f"{self.run_id}/r{repetition}/{case['case_id']}")
                 actor = case["input"].get("actor") or {}
                 token = await self._login(actor["user_ref"])
@@ -267,17 +313,29 @@ class Runner:
         except direct_lib.DirectError as exc:
             return self._make(case, repetition, "infrastructure_error", exc.kind, error=str(exc), latency_ms=exc.latency_ms or int((time.monotonic() - started) * 1000))
         except asyncio.TimeoutError:
-            return self._make(case, repetition, "infrastructure_error", "timeout", error=f"no answer within {limit}s", latency_ms=int((time.monotonic() - started) * 1000))
+            return self._make(case, repetition, "infrastructure_error", "timeout", error=f"no answer within {limit}s", latency_ms=int((time.monotonic() - started) * 1000),
+                              usage=await self._settle())
         except (ChatExecutionError, OperationError, httpx.HTTPError, OSError) as exc:
-            return self._make(case, repetition, "infrastructure_error", type(exc).__name__, error=str(exc), latency_ms=int((time.monotonic() - started) * 1000))
+            return self._make(case, repetition, "infrastructure_error", type(exc).__name__, error=str(exc), latency_ms=int((time.monotonic() - started) * 1000),
+                              usage=await self._settle())
         latency = int((time.monotonic() - started) * 1000)
 
         # A conversation that ended in an error before the agent said or did anything says nothing about the agent: the provider, the
         # network or the stack broke. Judging it would be a verdict on nothing.
         if chat and observation.get("agent_error") and not observation["trace"]["executed_tools"] and not observation["response"]["text"]:
             return self._make(case, repetition, "infrastructure_error", "agent_error", error=str(observation["agent_error"])[:300], latency_ms=latency,
-                              trace_artifact=self._trace_artifact(case, repetition, observation))
+                              usage=observation.get("usage"), trace_artifact=self._trace_artifact(case, repetition, observation))
 
+        if chat and observation.get("stopped"):
+            # the budget ran out between two turns: what the finished turns cost is kept, and nothing is judged (half a conversation is not a verdict)
+            usage = observation.get("usage")
+            cost, known = cost_from_usage(usage, uses_model)
+            if cost:
+                self.spent_usd += cost
+            return self._make(case, repetition, "blocked", str(observation["stopped"]), latency_ms=latency, usage=usage, cost_usd=cost, cost_known=known,
+                              model_id=self.target.model if self.target else None, input_tokens=(usage or {}).get("input_tokens"), output_tokens=(usage or {}).get("output_tokens"),
+                              cached_tokens=(usage or {}).get("cached_tokens"), turns=len(((observation.get("transcript") or {}).get("turns")) or []),
+                              trace_artifact=self._trace_artifact(case, repetition, observation))
         if chat and self.target:
             wrong = wrong_models(self.target.model, ((observation.get("usage") or {}).get("by_model")) or {})
             if wrong:
@@ -293,6 +351,8 @@ class Runner:
 
         metrics: List[Dict[str, Any]] = []
         judge_cost: Optional[float] = None
+        if self.args.metrics:                                                     # only the chosen metrics are asked for, so only they are judged and counted
+            resolved = {**resolved, "semantic_criteria": [c for c in resolved.get("semantic_criteria", []) if c.get("metric", "correctness") in self.args.metrics]}
         wants_judge = chat and bool(resolved.get("semantic_criteria")) and any(l.get("layer") == "L2" and l.get("enabled", True) for l in (resolved.get("evaluation") or {}).get("layers", []))
         if wants_judge and self.args.judge:
             scored = await judge_lib.score_case(self.client, url=JUDGE_URL, judge_model=self.args.judge, case=resolved, observation=observation)
@@ -362,6 +422,7 @@ class Runner:
             self.client = httpx.AsyncClient(timeout=httpx.Timeout(float(self.args.timeout)))
         try:
             total = max((self.repetitions(c) for c in cases), default=1)
+            self.planned = sum(self.repetitions(c) for c in cases)
             for repetition in range(1, total + 1):
                 if self.cancel.is_set():
                     break
@@ -391,6 +452,7 @@ def parse(argv: List[str]) -> argparse.Namespace:
     p.add_argument("--skills", choices=("on", "off", "default"), default="default", help="the chat agent's progressive skills for this run")
     p.add_argument("--prompt-version", help="a prompt variant (evals/prompts/<version>.json); omitted: the agent's own prompts")
     p.add_argument("--judge", help="the judge model for semantic criteria, provider/model (mock/mock-judge, openai/gpt-4o-mini...)")
+    p.add_argument("--metrics", default="", help="judge only these metrics (comma separated: correctness, faithfulness, relevance, hallucination, task_completion, safety, custom); default all the case asks for")
     p.add_argument("--calibrate", action="store_true", help="first check the judge on answers of known quality (evals/calibration) and record the result with the run")
     p.add_argument("--allow-same-judge", action="store_true", help="let the judge be the model under test (not independent evidence)")
     p.add_argument("--repeat", default="1", help="repetitions per case: a number, or `auto` (deterministic 1, chat and model-backed 3, benchmark 5)")
@@ -427,6 +489,12 @@ def parse(argv: List[str]) -> argparse.Namespace:
         p.error("--skills and --prompt-version belong to the agent: a direct call has neither")
     if a.calibrate and not a.judge:
         p.error("--calibrate needs --judge")
+    a.metrics = [m for m in a.metrics.split(",") if m]
+    unknown = [m for m in a.metrics if m not in judge_lib.METRICS]
+    if unknown:
+        p.error(f"--metrics: unknown {', '.join(unknown)} (known: {', '.join(judge_lib.METRICS)})")
+    if a.metrics and not a.judge:
+        p.error("--metrics selects what the judge scores; it needs --judge")
     if a.model and (a.model.count("/") != 1 or not all(a.model.split("/"))):
         p.error("--model must be provider/model, for example mock/mock-oracle or openai/gpt-4o-mini")
     return a
@@ -477,7 +545,7 @@ def direct_selection(selected: List[dict], left: List[dict]) -> tuple[List[dict]
 def config_of(args: argparse.Namespace, runner: Runner) -> Dict[str, Any]:
     t = runner.target
     return {"kind": args.kind, "group_id": args.group_id, "job_id": args.job_id, "provider": t.provider if t else None, "model_id": t.model if t else None,
-            "skills_enabled": None if not t else t.skills, "prompt_version": args.prompt_version, "prompt_sha256": getattr(args, "prompt_sha256", None), "judge_model": args.judge,
+            "skills_enabled": None if not t else t.skills, "prompt_version": args.prompt_version, "prompt_sha256": getattr(args, "prompt_sha256", None), "judge_model": args.judge, "metrics": args.metrics or None,
             "synthetic_model": bool(t and t.synthetic), "retries": args.retries, "limits": runner.limits, "repeat": args.repeat, "stop_on_critical": args.stop_on_critical,
             "gate": ({"min_pass_rate": args.gate_min_pass_rate, "min_repetitions": args.gate_min_repetitions} if args.gate else None),
             "concurrency": args.concurrency, "timeout_s": args.timeout, "chat_timeout_s": args.chat_timeout, "allow_same_judge": args.allow_same_judge,

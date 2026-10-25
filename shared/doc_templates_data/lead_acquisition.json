@@ -1,0 +1,852 @@
+{
+ "title": "Lead acquisition (Add New Customer)",
+ "intro": "The form an agent, a branch or a walk-in customer completes to create a lead. Seeded exactly from the live form.",
+ "sections": [
+  {
+   "id": "demographics",
+   "title": "Identity & Contact",
+   "stores_in": "profile",
+   "fields": [
+    {
+     "id": "first_name",
+     "label": "First name",
+     "type": "text",
+     "required": true,
+     "binding": {
+      "store": "profile",
+      "key": "first_name"
+     },
+     "max_length": 120
+    },
+    {
+     "id": "last_name",
+     "label": "Last name",
+     "type": "text",
+     "required": true,
+     "binding": {
+      "store": "profile",
+      "key": "last_name"
+     },
+     "max_length": 120
+    },
+    {
+     "id": "cnic",
+     "label": "CNIC (optional)",
+     "type": "text",
+     "required": false,
+     "binding": {
+      "store": "profile",
+      "key": "cnic"
+     },
+     "max_length": 15,
+     "placeholder": "35201-1234567-1"
+    },
+    {
+     "id": "date_of_birth",
+     "label": "Date of birth",
+     "type": "date",
+     "required": true,
+     "binding": {
+      "store": "profile",
+      "key": "date_of_birth"
+     }
+    },
+    {
+     "id": "gender",
+     "label": "Gender",
+     "type": "select",
+     "required": true,
+     "binding": {
+      "store": "profile",
+      "key": "gender"
+     },
+     "options": [
+      {
+       "id": "male",
+       "value": "Male",
+       "label": "Male"
+      },
+      {
+       "id": "female",
+       "value": "Female",
+       "label": "Female"
+      },
+      {
+       "id": "other",
+       "value": "Other",
+       "label": "Other"
+      }
+     ]
+    },
+    {
+     "id": "marital_status",
+     "label": "Marital status",
+     "type": "select",
+     "required": false,
+     "binding": {
+      "store": "profile",
+      "key": "marital_status"
+     },
+     "options": [
+      {
+       "id": "single",
+       "value": "Single",
+       "label": "Single"
+      },
+      {
+       "id": "married",
+       "value": "Married",
+       "label": "Married"
+      },
+      {
+       "id": "divorced",
+       "value": "Divorced",
+       "label": "Divorced"
+      },
+      {
+       "id": "widowed",
+       "value": "Widowed",
+       "label": "Widowed"
+      }
+     ]
+    },
+    {
+     "id": "mobile_number",
+     "label": "Mobile number",
+     "type": "phone",
+     "required": true,
+     "binding": {
+      "store": "profile",
+      "key": "mobile_number"
+     },
+     "max_length": 30,
+     "placeholder": "+92 300 1234567"
+    },
+    {
+     "id": "emergency_contact_name",
+     "label": "Emergency contact name",
+     "type": "text",
+     "required": false,
+     "binding": {
+      "store": "profile",
+      "key": "emergency_contact_name"
+     },
+     "max_length": 255
+    },
+    {
+     "id": "street_address",
+     "label": "Street address",
+     "type": "text",
+     "required": false,
+     "binding": {
+      "store": "profile",
+      "key": "street_address"
+     },
+     "max_length": 500
+    },
+    {
+     "id": "city",
+     "label": "City",
+     "type": "text",
+     "required": true,
+     "binding": {
+      "store": "profile",
+      "key": "city"
+     },
+     "max_length": 100
+    },
+    {
+     "id": "province",
+     "label": "Province",
+     "type": "select",
+     "required": false,
+     "binding": {
+      "store": "profile",
+      "key": "province"
+     },
+     "options": [
+      {
+       "id": "punjab",
+       "value": "Punjab",
+       "label": "Punjab"
+      },
+      {
+       "id": "sindh",
+       "value": "Sindh",
+       "label": "Sindh"
+      },
+      {
+       "id": "khyber_pakhtunkhwa",
+       "value": "Khyber Pakhtunkhwa",
+       "label": "Khyber Pakhtunkhwa"
+      },
+      {
+       "id": "balochistan",
+       "value": "Balochistan",
+       "label": "Balochistan"
+      },
+      {
+       "id": "islamabad_capital_territory",
+       "value": "Islamabad Capital Territory",
+       "label": "Islamabad Capital Territory"
+      },
+      {
+       "id": "gilgit_baltistan",
+       "value": "Gilgit-Baltistan",
+       "label": "Gilgit-Baltistan"
+      },
+      {
+       "id": "azad_jammu_kashmir",
+       "value": "Azad Jammu & Kashmir",
+       "label": "Azad Jammu & Kashmir"
+      }
+     ]
+    },
+    {
+     "id": "postal_code",
+     "label": "Postal code",
+     "type": "text",
+     "required": false,
+     "binding": {
+      "store": "profile",
+      "key": "postal_code"
+     },
+     "max_length": 20
+    }
+   ]
+  },
+  {
+   "id": "cnic",
+   "title": "CNIC & Docs",
+   "stores_in": "profile",
+   "fields": [
+    {
+     "id": "cnic_issue_date",
+     "label": "CNIC issue date",
+     "type": "date",
+     "required": false,
+     "binding": {
+      "store": "profile",
+      "key": "cnic_issue_date"
+     }
+    },
+    {
+     "id": "cnic_expiry_date",
+     "label": "CNIC expiry date",
+     "type": "date",
+     "required": false,
+     "binding": {
+      "store": "profile",
+      "key": "cnic_expiry_date"
+     }
+    }
+   ]
+  },
+  {
+   "id": "employment",
+   "title": "Occupation & Income",
+   "stores_in": "profile",
+   "fields": [
+    {
+     "id": "employment_type",
+     "label": "Employment type",
+     "type": "select",
+     "required": false,
+     "binding": {
+      "store": "profile",
+      "key": "employment_type"
+     },
+     "options": [
+      {
+       "id": "salaried",
+       "value": "Salaried",
+       "label": "Salaried"
+      },
+      {
+       "id": "self_employed",
+       "value": "Self-Employed",
+       "label": "Self-employed"
+      },
+      {
+       "id": "business",
+       "value": "Business",
+       "label": "Business"
+      },
+      {
+       "id": "unemployed",
+       "value": "Unemployed",
+       "label": "Unemployed"
+      },
+      {
+       "id": "retired",
+       "value": "Retired",
+       "label": "Retired"
+      },
+      {
+       "id": "student",
+       "value": "Student",
+       "label": "Student"
+      }
+     ]
+    },
+    {
+     "id": "occupation",
+     "label": "Occupation",
+     "type": "text",
+     "required": false,
+     "binding": {
+      "store": "profile",
+      "key": "occupation"
+     },
+     "max_length": 255
+    },
+    {
+     "id": "employer_name",
+     "label": "Employer name",
+     "type": "text",
+     "required": false,
+     "binding": {
+      "store": "profile",
+      "key": "employer_name"
+     },
+     "max_length": 255
+    },
+    {
+     "id": "industry",
+     "label": "Industry sector",
+     "type": "text",
+     "required": false,
+     "binding": {
+      "store": "profile",
+      "key": "industry"
+     },
+     "max_length": 255
+    },
+    {
+     "id": "years_of_experience",
+     "label": "Years of experience",
+     "type": "number",
+     "required": false,
+     "binding": {
+      "store": "profile",
+      "key": "years_of_experience"
+     }
+    },
+    {
+     "id": "occupation_hazard_level",
+     "label": "Occupation hazard level",
+     "type": "select",
+     "required": false,
+     "binding": {
+      "store": "profile",
+      "key": "occupation_hazard_level"
+     },
+     "options": [
+      {
+       "id": "low",
+       "value": "Low",
+       "label": "Low"
+      },
+      {
+       "id": "medium",
+       "value": "Medium",
+       "label": "Medium"
+      },
+      {
+       "id": "high",
+       "value": "High",
+       "label": "High"
+      },
+      {
+       "id": "veryhigh",
+       "value": "VeryHigh",
+       "label": "Very high"
+      }
+     ]
+    },
+    {
+     "id": "declared_annual_income",
+     "label": "Declared annual income (PKR)",
+     "type": "number",
+     "required": false,
+     "binding": {
+      "store": "profile",
+      "key": "declared_annual_income"
+     }
+    },
+    {
+     "id": "monthly_income",
+     "label": "Monthly income (PKR)",
+     "type": "number",
+     "required": false,
+     "binding": {
+      "store": "profile",
+      "key": "monthly_income"
+     }
+    }
+   ]
+  },
+  {
+   "id": "medical",
+   "title": "Medical & Lifestyle",
+   "stores_in": "profile",
+   "fields": [
+    {
+     "id": "has_pre_existing_conditions",
+     "label": "I have pre-existing medical conditions",
+     "type": "checkbox",
+     "required": false,
+     "binding": {
+      "store": "profile",
+      "key": "has_pre_existing_conditions"
+     }
+    },
+    {
+     "id": "is_smoker",
+     "label": "I smoke",
+     "type": "checkbox",
+     "required": false,
+     "binding": {
+      "store": "profile",
+      "key": "is_smoker"
+     }
+    },
+    {
+     "id": "is_diabetic",
+     "label": "I have diabetes",
+     "type": "checkbox",
+     "required": false,
+     "binding": {
+      "store": "profile",
+      "key": "is_diabetic"
+     }
+    },
+    {
+     "id": "height_cm",
+     "label": "Height (cm)",
+     "type": "number",
+     "required": false,
+     "binding": {
+      "store": "profile",
+      "key": "height_cm"
+     }
+    },
+    {
+     "id": "weight_kg",
+     "label": "Weight (kg)",
+     "type": "number",
+     "required": false,
+     "binding": {
+      "store": "profile",
+      "key": "weight_kg"
+     }
+    },
+    {
+     "id": "exercise_frequency",
+     "label": "Exercise frequency",
+     "type": "select",
+     "required": false,
+     "binding": {
+      "store": "profile",
+      "key": "exercise_frequency"
+     },
+     "options": [
+      {
+       "id": "sedentary",
+       "value": "Sedentary",
+       "label": "Sedentary"
+      },
+      {
+       "id": "light",
+       "value": "Light",
+       "label": "Light"
+      },
+      {
+       "id": "moderate",
+       "value": "Moderate",
+       "label": "Moderate"
+      },
+      {
+       "id": "active",
+       "value": "Active",
+       "label": "Active"
+      },
+      {
+       "id": "veryactive",
+       "value": "VeryActive",
+       "label": "Very active"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "habit",
+   "title": "Habit Check",
+   "stores_in": "profile",
+   "fields": [
+    {
+     "id": "smoking_status",
+     "label": "Smoking status",
+     "type": "select",
+     "required": false,
+     "binding": {
+      "store": "profile",
+      "key": "smoking_status"
+     },
+     "options": [
+      {
+       "id": "non_smoker",
+       "value": "Non-smoker",
+       "label": "Non-smoker"
+      },
+      {
+       "id": "occasional",
+       "value": "Occasional",
+       "label": "Occasional"
+      },
+      {
+       "id": "heavy_smoker",
+       "value": "Heavy Smoker",
+       "label": "Heavy smoker"
+      },
+      {
+       "id": "vaper",
+       "value": "Vaper",
+       "label": "Vaper"
+      },
+      {
+       "id": "chewing_tobacco",
+       "value": "Chewing Tobacco",
+       "label": "Chewing tobacco"
+      }
+     ]
+    },
+    {
+     "id": "alcohol_consumption_frequency",
+     "label": "Alcohol consumption",
+     "type": "select",
+     "required": false,
+     "binding": {
+      "store": "profile",
+      "key": "alcohol_consumption_frequency"
+     },
+     "options": [
+      {
+       "id": "none",
+       "value": "None",
+       "label": "None"
+      },
+      {
+       "id": "occasional",
+       "value": "Occasional",
+       "label": "Occasional"
+      },
+      {
+       "id": "moderate",
+       "value": "Moderate",
+       "label": "Moderate"
+      },
+      {
+       "id": "heavy",
+       "value": "Heavy",
+       "label": "Heavy"
+      }
+     ]
+    },
+    {
+     "id": "recreational_drug_use_history",
+     "label": "History of recreational drug use",
+     "type": "checkbox",
+     "required": false,
+     "binding": {
+      "store": "profile",
+      "key": "recreational_drug_use_history"
+     }
+    },
+    {
+     "id": "participates_in_extreme_sports",
+     "label": "I take part in extreme sports",
+     "type": "checkbox",
+     "required": false,
+     "binding": {
+      "store": "profile",
+      "key": "participates_in_extreme_sports"
+     }
+    },
+    {
+     "id": "private_aviation",
+     "label": "I fly privately",
+     "type": "checkbox",
+     "required": false,
+     "binding": {
+      "store": "profile",
+      "key": "private_aviation"
+     }
+    },
+    {
+     "id": "frequent_high_risk_travel",
+     "label": "I often travel to high-risk places",
+     "type": "checkbox",
+     "required": false,
+     "binding": {
+      "store": "profile",
+      "key": "frequent_high_risk_travel"
+     }
+    },
+    {
+     "id": "moving_violations_past_3_years",
+     "label": "Traffic violations in the past 3 years",
+     "type": "number",
+     "required": false,
+     "binding": {
+      "store": "profile",
+      "key": "moving_violations_past_3_years"
+     }
+    },
+    {
+     "id": "dui_dwi_history",
+     "label": "History of drink-driving",
+     "type": "checkbox",
+     "required": false,
+     "binding": {
+      "store": "profile",
+      "key": "dui_dwi_history"
+     }
+    },
+    {
+     "id": "criminal_record",
+     "label": "I have a criminal record",
+     "type": "checkbox",
+     "required": false,
+     "binding": {
+      "store": "profile",
+      "key": "criminal_record"
+     }
+    }
+   ]
+  },
+  {
+   "id": "financial",
+   "title": "Financial Profile",
+   "stores_in": "profile",
+   "fields": [
+    {
+     "id": "credit_score",
+     "label": "Credit score",
+     "type": "number",
+     "required": false,
+     "binding": {
+      "store": "profile",
+      "key": "credit_score"
+     }
+    },
+    {
+     "id": "delinquency_count",
+     "label": "Late or missed payments (count)",
+     "type": "number",
+     "required": false,
+     "binding": {
+      "store": "profile",
+      "key": "delinquency_count"
+     }
+    },
+    {
+     "id": "risk_grade",
+     "label": "Risk grade",
+     "type": "select",
+     "required": false,
+     "binding": {
+      "store": "profile",
+      "key": "risk_grade"
+     },
+     "options": [
+      {
+       "id": "a",
+       "value": "A",
+       "label": "Grade A"
+      },
+      {
+       "id": "b",
+       "value": "B",
+       "label": "Grade B"
+      },
+      {
+       "id": "c",
+       "value": "C",
+       "label": "Grade C"
+      },
+      {
+       "id": "d",
+       "value": "D",
+       "label": "Grade D"
+      },
+      {
+       "id": "e",
+       "value": "E",
+       "label": "Grade E"
+      },
+      {
+       "id": "f",
+       "value": "F",
+       "label": "Grade F"
+      }
+     ]
+    },
+    {
+     "id": "number_of_dependents",
+     "label": "Number of dependents",
+     "type": "number",
+     "required": false,
+     "binding": {
+      "store": "profile",
+      "key": "number_of_dependents"
+     }
+    },
+    {
+     "id": "dependent_type",
+     "label": "Main dependent",
+     "type": "select",
+     "required": false,
+     "binding": {
+      "store": "profile",
+      "key": "dependent_type"
+     },
+     "options": [
+      {
+       "id": "spouse",
+       "value": "Spouse",
+       "label": "Spouse"
+      },
+      {
+       "id": "child",
+       "value": "Child",
+       "label": "Child"
+      },
+      {
+       "id": "parent",
+       "value": "Parent",
+       "label": "Parent"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "beneficiary",
+   "title": "Nominee Details",
+   "stores_in": "profile",
+   "fields": [
+    {
+     "id": "beneficiary_first_name",
+     "label": "Nominee first name",
+     "type": "text",
+     "required": false,
+     "binding": {
+      "store": "profile",
+      "key": "beneficiary_first_name"
+     },
+     "max_length": 120
+    },
+    {
+     "id": "beneficiary_last_name",
+     "label": "Nominee last name",
+     "type": "text",
+     "required": false,
+     "binding": {
+      "store": "profile",
+      "key": "beneficiary_last_name"
+     },
+     "max_length": 120
+    },
+    {
+     "id": "beneficiary_cnic",
+     "label": "Nominee CNIC",
+     "type": "text",
+     "required": false,
+     "binding": {
+      "store": "profile",
+      "key": "beneficiary_cnic"
+     },
+     "max_length": 15,
+     "placeholder": "35201-1234567-1"
+    },
+    {
+     "id": "beneficiary_relationship",
+     "label": "Relationship to you",
+     "type": "select",
+     "required": false,
+     "binding": {
+      "store": "profile",
+      "key": "beneficiary_relationship"
+     },
+     "options": [
+      {
+       "id": "spouse",
+       "value": "Spouse",
+       "label": "Spouse"
+      },
+      {
+       "id": "child",
+       "value": "Child",
+       "label": "Child"
+      },
+      {
+       "id": "parent",
+       "value": "Parent",
+       "label": "Parent"
+      },
+      {
+       "id": "sibling",
+       "value": "Sibling",
+       "label": "Sibling"
+      },
+      {
+       "id": "other",
+       "value": "Other",
+       "label": "Other"
+      }
+     ]
+    },
+    {
+     "id": "beneficiary_share",
+     "label": "Nominee share (%)",
+     "type": "number",
+     "required": false,
+     "binding": {
+      "store": "profile",
+      "key": "beneficiary_share"
+     }
+    }
+   ]
+  },
+  {
+   "id": "plan",
+   "title": "Insurance Plan",
+   "stores_in": "profile",
+   "fields": [
+    {
+     "id": "policy_coverage",
+     "label": "Cover you would like (PKR)",
+     "type": "number",
+     "required": false,
+     "binding": {
+      "store": "profile",
+      "key": "policy_coverage"
+     }
+    },
+    {
+     "id": "policy_term",
+     "label": "Policy term (years)",
+     "type": "number",
+     "required": false,
+     "binding": {
+      "store": "profile",
+      "key": "policy_term"
+     }
+    }
+   ]
+  }
+ ],
+ "disclaimers": []
+}
