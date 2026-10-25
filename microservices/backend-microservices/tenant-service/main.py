@@ -383,6 +383,12 @@ app.include_router(eval_datasets_router)
 from routers.eval_jobs import internal as eval_jobs_internal_router, router as eval_jobs_router
 from routers.eval_drift import internal as eval_drift_internal_router, router as eval_drift_router
 app.include_router(eval_drift_router)
+from routers.eval_budget import router as eval_budget_router
+app.include_router(eval_budget_router)
+from routers.eval_costs import router as eval_costs_router
+app.include_router(eval_costs_router)
+from routers.eval_studio import router as eval_studio_router
+app.include_router(eval_studio_router)
 app.include_router(eval_drift_internal_router)
 app.include_router(eval_jobs_router)
 from routers.eval_models import benchmarks as eval_benchmarks_router, router as eval_models_router

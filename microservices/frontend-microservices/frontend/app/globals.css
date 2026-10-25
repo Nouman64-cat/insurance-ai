@@ -479,3 +479,31 @@ html.dark .case-modern .section-label { color: #f8fafc; }
 @media (prefers-reduced-motion: reduce) {
   .new-arrival { animation: none; background-color: rgba(219, 234, 254, 0.7); }
 }
+
+/* ── Evaluation Studio: the ecosystem map (theme through the `dark` class; motion is switched off for people who ask for less of it) ── */
+.studio-canvas { background-color: #f8fafc; background-image: radial-gradient(circle at 1px 1px, #cbd5e1 1px, transparent 0); background-size: 22px 22px; }
+.dark .studio-canvas { background-color: #0b1220; background-image: radial-gradient(circle at 1px 1px, #1e293b 1px, transparent 0); }
+.studio-node-rect { fill: #ffffff; stroke: #cbd5e1; stroke-width: 1.25; transition: stroke .15s, filter .15s; }
+.dark .studio-node-rect { fill: #0f172a; stroke: #334155; }
+.studio-band { fill: rgba(241, 245, 249, .55); } .dark .studio-band { fill: rgba(30, 41, 59, .35); }
+.studio-node { cursor: pointer; outline: none; transition: opacity .22s ease; }
+.studio-node:hover .studio-node-rect, .studio-node:focus-visible .studio-node-rect { stroke: #38bdf8; filter: drop-shadow(0 4px 10px rgba(14, 165, 233, .28)); }
+.studio-node:focus-visible .studio-node-rect { stroke-width: 2.5; }
+.studio-node.is-selected .studio-node-rect { stroke: #2563eb; stroke-width: 2.25; filter: drop-shadow(0 6px 14px rgba(37, 99, 235, .3)); }
+.studio-node-text { fill: #0f172a; } .dark .studio-node-text { fill: #e2e8f0; }
+.studio-node-sub { fill: #64748b; } .dark .studio-node-sub { fill: #94a3b8; }
+.studio-edge { fill: none; stroke: #94a3b8; opacity: .55; transition: opacity .22s ease, stroke .22s ease, stroke-width .22s ease; }
+.dark .studio-edge { stroke: #475569; }
+.studio-edge.is-lit { stroke: #0ea5e9; opacity: .95; }
+.studio-edge.is-active { stroke: #0ea5e9; opacity: 1; stroke-dasharray: 7 7; animation: studio-flow 1.1s linear infinite; }
+.studio-dim { opacity: .28; }
+.studio-ring { fill: none; stroke-width: 2; transform-box: fill-box; transform-origin: center; animation: studio-pulse 1.8s ease-out infinite; }
+@keyframes studio-flow { to { stroke-dashoffset: -14; } }
+@keyframes studio-pulse { 0% { opacity: .75; transform: scale(1); } 100% { opacity: 0; transform: scale(1.12); } }
+@keyframes studio-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.studio-rise { animation: studio-rise .22s ease-out both; }
+@media (prefers-reduced-motion: reduce) {
+  .studio-edge.is-active { animation: none; }
+  .studio-ring, .studio-rise { animation: none; }
+  .studio-node, .studio-node-rect, .studio-edge { transition: none; }
+}

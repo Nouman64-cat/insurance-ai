@@ -220,15 +220,35 @@ class Runner:
             return self._record(self._make(case, repetition, "blocked", "invalid_input", error="; ".join(problems)[:500]))
         self.event("log", f"{case['case_id']} r{repetition}: starting")
         attempt = 0
+        paid_before: List[Dict[str, Any]] = []                     # what the attempts that failed had already spent
         while True:
             attempt += 1
             result = await self._execute_once(case, repetition)
             if result.status == "infrastructure_error" and attempt <= self.args.retries and not self.cancel.is_set():
+                if result.usage and result.usage.get("calls"):
+                    paid_before.append(result.usage)
                 self.event("log", f"{case['case_id']} r{repetition}: infrastructure error ({result.reason}); retrying ({attempt}/{self.args.retries})")
                 await asyncio.sleep(min(2.0 * attempt, 10.0))
                 continue
             result.attempts = attempt
+            result.retry_usage = paid_before
             return self._record(result)
+
+    async def _settle(self) -> Optional[Dict[str, Any]]:
+        """An execution that failed may already have asked a model for something, and that was paid for. Read what the ledger shows before the next
+        execution resets it; None when nothing was spent. The spend counts toward the run's budget."""
+        if self.meter is None:
+            return None
+        try:
+            lost = await self.meter.settle_abandoned()
+        except Exception:                                                        # noqa: BLE001 - an unreadable ledger leaves the failure as it was
+            return None
+        if lost is None or lost.status != "attributed" or not lost.calls:
+            return None
+        cost, known = cost_from_usage(lost.as_dict(), True)
+        if cost:
+            self.spent_usd += cost
+        return lost.as_dict()
 
     async def _execute_once(self, case: dict, repetition: int) -> CaseResult:
         chat = is_chat(case)
@@ -278,16 +298,18 @@ class Runner:
         except direct_lib.DirectError as exc:
             return self._make(case, repetition, "infrastructure_error", exc.kind, error=str(exc), latency_ms=exc.latency_ms or int((time.monotonic() - started) * 1000))
         except asyncio.TimeoutError:
-            return self._make(case, repetition, "infrastructure_error", "timeout", error=f"no answer within {limit}s", latency_ms=int((time.monotonic() - started) * 1000))
+            return self._make(case, repetition, "infrastructure_error", "timeout", error=f"no answer within {limit}s", latency_ms=int((time.monotonic() - started) * 1000),
+                              usage=await self._settle())
         except (ChatExecutionError, OperationError, httpx.HTTPError, OSError) as exc:
-            return self._make(case, repetition, "infrastructure_error", type(exc).__name__, error=str(exc), latency_ms=int((time.monotonic() - started) * 1000))
+            return self._make(case, repetition, "infrastructure_error", type(exc).__name__, error=str(exc), latency_ms=int((time.monotonic() - started) * 1000),
+                              usage=await self._settle())
         latency = int((time.monotonic() - started) * 1000)
 
         # A conversation that ended in an error before the agent said or did anything says nothing about the agent: the provider, the
         # network or the stack broke. Judging it would be a verdict on nothing.
         if chat and observation.get("agent_error") and not observation["trace"]["executed_tools"] and not observation["response"]["text"]:
             return self._make(case, repetition, "infrastructure_error", "agent_error", error=str(observation["agent_error"])[:300], latency_ms=latency,
-                              trace_artifact=self._trace_artifact(case, repetition, observation))
+                              usage=observation.get("usage"), trace_artifact=self._trace_artifact(case, repetition, observation))
 
         if chat and self.target:
             wrong = wrong_models(self.target.model, ((observation.get("usage") or {}).get("by_model")) or {})

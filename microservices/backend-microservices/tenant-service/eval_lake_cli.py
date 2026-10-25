@@ -24,6 +24,9 @@
     docker compose exec -T tenant-service python eval_lake_cli.py job-submit --as-user admin@example.com --config - < job.json    # queue an evaluation run
     docker compose exec tenant-service python eval_lake_cli.py jobs | job <id> | job-events <id> [--follow] | job-cancel <id>
     docker compose exec tenant-service python eval_lake_cli.py models-seed | models | benchmark-ingest <benchmark.json> | benchmarks
+    docker compose exec tenant-service python eval_lake_cli.py cost-statements | cost-statement-add --as-user EMAIL --provider openai --from 2026-10-01 --to 2026-10-31 --billed 0.64 --source "..." | cost-reconcile ID --as-user EMAIL
+    docker compose exec tenant-service python eval_lake_cli.py cost-backfill [--run ID] | cost-attribution [--run ID]       # cost lines of older runs; is every run's spending attributed exactly once
+    docker compose exec tenant-service python eval_lake_cli.py drift-ingest <scan.json> | drift-registry | drift-deps-load <slug> <version> <file>
     python evals/environment/envctl.py worker [--once]                                                        # on the host: runs the queued jobs
 
 The browser-based Dataset Manager (a later stage) uses the same DataLake; this is for setup, checks and recovery.
@@ -211,6 +214,52 @@ async def run(args) -> int:
                 print(f"{m.provider}/{m.model_id:28} {m.status:10} {'SYNTHETIC ' if m.synthetic else ''}{','.join(m.roles):16} "
                       + (f"${p.input_per_m}/{p.cached_per_m}/{p.output_per_m} per M tokens" if p else "no price"))
             return 0
+        if args.command in ("cost-statements", "cost-statement-add", "cost-reconcile"):
+            from datetime import date as _date
+            from fastapi import HTTPException
+            from services import eval_reconcile
+            try:
+                if args.command == "cost-statements":
+                    for x in await eval_reconcile.list_statements(session):
+                        live = x["live"]
+                        print(f"{x['id']}  {x['provider']:<9} {x['period_start']}..{x['period_end']}  billed ${x['billed_usd']:.4f}  " + ("replaced by a later statement" if live is None else
+                              f"recorded ${live['recorded_usd']:.4f}  difference ${live['difference_usd']:+.4f}  {live['status'].upper()}") + (f"  [{x['reference']}]" if x["reference"] else ""))
+                    return 0
+                actor = await _user_id(session, args.as_user)
+                if args.command == "cost-statement-add":
+                    out = await eval_reconcile.create_statement(
+                        session, actor_id=actor, provider=args.provider, period_start=_date.fromisoformat(args.start), period_end=_date.fromisoformat(args.end), billed_usd=args.billed,
+                        reference=args.reference, source=args.source, billed_tokens={"input": args.input_tokens, "output": args.output_tokens, "cached": args.cached_tokens},
+                        tolerance_pct=args.tolerance_pct, tolerance_usd=args.tolerance_usd, supersedes_id=UUID(args.replaces) if args.replaces else None, note=args.note)
+                    result = out["reconciliation"]
+                    print(f"statement {out['statement']['id']}")
+                else:
+                    from shared.models.evaluation import EvalProviderStatement
+                    st = await session.get(EvalProviderStatement, UUID(args.statement_id))
+                    if st is None:
+                        raise LakeValidationError("no such statement")
+                    result = await eval_reconcile.reconcile(session, st, actor_id=actor, note=args.note)
+                await session.commit()
+            except HTTPException as exc:
+                await session.rollback()
+                raise LakeValidationError(str(exc.detail if isinstance(exc.detail, str) else exc.detail.get("message")))
+            print(f"{result['status'].upper()}: billed ${result['billed_usd']:.4f}, recorded ${result['recorded_usd']:.4f}, difference ${result['difference_usd']:+.4f} ({result['difference_pct']:+.1f}%)")
+            for line in result["explanation"]:
+                print(f"  - {line}")
+            return 0
+        if args.command == "cost-backfill":
+            from services import eval_costs
+            out = await eval_costs.backfill(session, args.run)
+            await session.commit()
+            print(json.dumps({k: v for k, v in out.items() if k != "per_run"}) + ("" if not args.verbose else "\n" + json.dumps(out["per_run"], indent=1)))
+            return 0
+        if args.command == "cost-attribution":
+            from services import eval_costs
+            out = await eval_costs.attribution(session, args.run)
+            for r in out["runs"]:
+                print(f"{r['run_id']:<34} {r['kind']:<17} lines {r['lines']:>4}  lines ${r['known_usd']:.6f}  run ${r['recorded_usd']:.6f}  " + ("OK" if not r["problems"] else "PROBLEMS: " + " | ".join(r["problems"][:3])))
+            print(f"{out['checked']} run(s) checked, {out['with_problems']} with problems")
+            return 1 if out["with_problems"] else 0
         if args.command == "drift-ingest":
             from services import eval_drift
             report = json.loads(Path(args.file).read_text(encoding="utf-8"))
@@ -437,6 +486,15 @@ def main() -> int:
     r1 = sub.add_parser("run"); r1.add_argument("run_id"); r1.add_argument("--report", action="store_true")
     sub.add_parser("models-seed"); sub.add_parser("models"); sub.add_parser("benchmarks")
     bi = sub.add_parser("benchmark-ingest"); bi.add_argument("file")
+    sub.add_parser("cost-statements")
+    sa = sub.add_parser("cost-statement-add"); sa.add_argument("--as-user", required=True); sa.add_argument("--provider", required=True, choices=("openai", "anthropic", "gemini"))
+    sa.add_argument("--from", dest="start", required=True, help="first day of the period, YYYY-MM-DD"); sa.add_argument("--to", dest="end", required=True, help="last day of the period (inclusive)")
+    sa.add_argument("--billed", type=float, required=True, help="what the provider billed, in USD"); sa.add_argument("--source", required=True, help="where the figure came from")
+    sa.add_argument("--reference"); sa.add_argument("--input-tokens", type=int); sa.add_argument("--output-tokens", type=int); sa.add_argument("--cached-tokens", type=int)
+    sa.add_argument("--tolerance-pct", type=float, default=5.0); sa.add_argument("--tolerance-usd", type=float, default=0.05); sa.add_argument("--replaces"); sa.add_argument("--note")
+    rc_ = sub.add_parser("cost-reconcile"); rc_.add_argument("statement_id"); rc_.add_argument("--as-user", required=True); rc_.add_argument("--note")
+    cb = sub.add_parser("cost-backfill"); cb.add_argument("--run"); cb.add_argument("--verbose", action="store_true")
+    ca = sub.add_parser("cost-attribution"); ca.add_argument("--run")
     di = sub.add_parser("drift-ingest"); di.add_argument("file")
     sub.add_parser("drift-registry")
     dd = sub.add_parser("drift-deps-load"); dd.add_argument("slug"); dd.add_argument("version"); dd.add_argument("file")

@@ -211,10 +211,23 @@ async def _check_request(session: AsyncSession, req: JobRequest) -> Dict[str, An
     return estimate
 
 
+async def _budget_gate(session: AsyncSession, estimate: Dict[str, Any], actor: User, req: JobRequest) -> Dict[str, Any]:
+    """Stop scheduling when the request would pass an enforced daily or monthly budget; the refusal is audited. Returns the budget status to keep with the job."""
+    from services import eval_budget
+    try:
+        return await eval_budget.enforce(session, estimate)
+    except HTTPException as exc:
+        await record_standalone(module="administration", action="eval.budget.refused", entity_type="eval_job", entity_id="-", tenant_id=actor.tenant_id, actor_id=str(actor.id),
+                                actor_type="USER", actor_role="SuperAdmin", metadata={"dataset": req.dataset, "version": req.version, "problems": (exc.detail or {}).get("problems", [])[:4]})
+        raise
+
+
 @router.post("/estimate")
 async def preview_job(req: JobRequest, session: AsyncSession = Depends(get_session)):
     """What this request would run and cost, checked exactly as a real request is. Nothing is queued."""
-    return {"valid": True, "estimate": await _check_request(session, req)}
+    estimate = await _check_request(session, req)
+    from services import eval_budget
+    return {"valid": True, "estimate": estimate, "budget": await eval_budget.status(session, eval_budget.estimate_total(estimate))}
 
 
 @router.post("/{job_id}/rerun", status_code=201)
@@ -226,6 +239,7 @@ async def rerun_job(job_id: UUID, session: AsyncSession = Depends(get_session), 
     except Exception as exc:                                                                      # noqa: BLE001
         raise HTTPException(422, detail={"message": "The earlier request is no longer valid.", "problems": [str(exc)[:300]]})
     estimate = await _check_request(session, req)
+    estimate["budget"] = await _budget_gate(session, estimate, actor, req)
     job = EvalJob(config=req.model_dump(exclude_none=True), estimate=estimate, created_by=actor.id)
     session.add(job)
     session.add(EvalJobEvent(job_id=job.id, seq=1, kind="state", message=f"queued (rerun of {old.id})", data={"state": "queued", "rerun_of": str(old.id)}))
@@ -238,6 +252,7 @@ async def rerun_job(job_id: UUID, session: AsyncSession = Depends(get_session), 
 @router.post("", status_code=201)
 async def create_job(req: JobRequest, session: AsyncSession = Depends(get_session), actor: User = Depends(_actor)):
     estimate = await _check_request(session, req)
+    estimate["budget"] = await _budget_gate(session, estimate, actor, req)
     config = req.model_dump(exclude_none=True)
     job = EvalJob(config=config, estimate=estimate, created_by=actor.id)
     session.add(job)

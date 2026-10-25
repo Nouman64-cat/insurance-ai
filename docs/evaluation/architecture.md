@@ -183,3 +183,66 @@ docker compose exec -T tenant-service python test_eval_models.py
 **Still blocked:** a benchmark of real GPT, Gemini and Claude models needs a key for each provider in `evals/environment/eval.env` and the
 provider in `EVAL_ALLOWED_PROVIDERS`. Until then every benchmark here is scripted (synthetic) and says nothing about real models.
 The benchmark comparison page is Phase 8; the budget and cost forecasting for benchmarks is Phase 7.
+
+
+## Phase 7: cost lines
+
+Every dollar of a run is recorded as an append-only **cost line** (`eval_cost_lines`) that says what it paid for, how much was used, how sure we are, and where the number came from.
+
+| component | what it is |
+|---|---|
+| `candidate_llm` | the model under test, asked directly (direct benchmarks) |
+| `agent_llm` / `subagent_llm` | the application's chat agent / one of its specialists or helpers (the ledger names the service) |
+| `judge` | the DeepEval judge scoring an answer (cost as reported by the judge service) |
+| `ocr` | the OCR engine reading a document |
+| `embedding` | an embedding model (the application does not meter embeddings yet, so none appear) |
+| `retry` | calls made by an attempt that failed with an infrastructure error and was run again |
+| `fallback` | a call answered by a model other than the one under test |
+| `unattributed` | ledger rows seen during an execution that carry another thread id (a late row, a conversation title): real spend, not that reply's own calls |
+| `self_hosted` | reserved for GPU/CPU seconds (`unit_kind`) of a self-hosted model |
+
+`cost_kind` is `estimated` (token counts from the ledger x a versioned price: nothing has been invoiced), `unknown` (used but cannot be priced: the amount is NULL, never 0) or `confirmed` (reserved for amounts a provider billed; M4 reconciliation). Lines are written by `ingest_run` (`shared/evaluation/cost_lines.py`, `cost_store.py`), keyed by a hash of (run, case, repetition, component, service, model, attempt) with a unique index, so ingesting a run twice, or one that crashed half way, never counts anything twice. The run's `known_cost_usd` is the sum of its lines. Runs ingested before cost lines existed are rebuilt with `eval_lake_cli.py cost-backfill` using the run's own price version; they lack what the original run did not record (service names, failed attempts).
+
+`eval_lake_cli.py cost-attribution` (and `shared.evaluation.cost_lines.check_run`) checks each run: lines add up to the run's cost, every token the ledger showed is in a line, every execution that used a model has a line, nothing is recorded twice, no line belongs to an execution the run does not have.
+
+What a failed execution spent is no longer lost: when an execution fails, the runner reads the ledger rows it caused before the next execution resets them (`UsageMeter.settle_abandoned`), and the usage of attempts that were retried travels with the final result as `retry_usage`.
+
+
+### Provider billing reconciliation
+
+A Super Admin types in what a provider billed for a period (inclusive dates, UTC; optionally the token totals the provider's page shows), for the API key or project that evaluations use. The platform adds up its own cost lines for that provider and period and compares (`shared/evaluation/reconcile.py`, `services/eval_reconcile.py`, `routers/eval_costs.py`):
+
+| status | meaning |
+|---|---|
+| `matched` | within the tolerance (default 5% of the bill, never less than $0.05): the recorded amounts of that period are **confirmed** |
+| `under_recorded` | billed more, every line priced: usage reached the provider without being attributed to an execution (or the key has other callers) |
+| `over_recorded` | recorded more than billed: prices out of date, or a discount (cached input, batch) not applied |
+| `incomplete` | billed more, and some lines could not be priced: they may explain the gap |
+
+When token totals are given they say which side is off: tokens agree while dollars differ = the prices; the provider counted more tokens than were attributed = missing attribution. Two active statements of one provider may not overlap (a bill cannot be counted twice); a correction is a new statement naming the one it replaces. Statements and reconciliations are append-only; the live comparison is recomputed from the lines every time, and a reconciliation row records who looked and what they wrote. Money in any window is then **confirmed** (inside a period whose statement matches right now), **estimated** (priced from recorded tokens and a recorded price) or **unknown** (could not be priced; in no total): `GET /eval/costs/certainty`. Lines keep `cost_kind = estimated` forever; "confirmed" is derived, never written onto a line.
+
+API: `GET/POST /eval/costs/statements`, `GET /eval/costs/statements/{id}`, `POST /eval/costs/statements/{id}/reconcile`, `GET /eval/costs/certainty`, `GET /eval/costs/lines` (the detailed usage records), `GET /eval/costs/attribution`. CLI: `eval_lake_cli.py cost-statements | cost-statement-add | cost-reconcile`.
+
+
+### Cost analytics
+
+`GET /eval/costs/...` (SuperAdmin; logic in `shared/evaluation/cost_analytics.py`, data in `services/eval_analytics.py`). Everything is computed from recorded numbers (cost lines, run results) and says which; where evidence is thin the answer says so instead of choosing a winner.
+
+| endpoint | what it answers |
+|---|---|
+| `trends?from&to&bucket=day\|week\|month&group_by=component\|provider\|model` | money over time, empty days filled, a running total, the peak; unpriced lines counted apart; scripted models left out |
+| `models[?dataset&version&mode]` | per dataset version and mode: each configuration's pass rate with its 95% interval, reliability, latency p50/p95, error rate, and what a **passed** test cost all-in (model + judge + retries + fallbacks + unattributed) / tests passed; the quality/cost frontier; model advice |
+| `benchmarks` | what each benchmark cost in total and per model |
+| `anomalies` | unusual runs / days / executions, each with the observed value, the baseline and the evidence |
+| `recommendations` | what the comparison and the spending support, with evidence, caveats and a saving where one can be worked out |
+
+Anomaly rules (robust statistics: median and scaled median absolute deviation, judged only against EARLIER data): `run_cost` (more than 2x the median cost per execution of at least 3 earlier runs of the same model, mode, dataset and version, and $0.05 more than usual), `daily_spike` (more than 3x the median of the previous active days in the last 30, at least 4 of them, and $0.25 more; days with no evaluation do not pull the usual down to zero), `token_outlier` (more than 4x the median tokens of at least 4 earlier executions of the same case on the same model, and 20,000 more), `waste` (retries, fallbacks and unattributed calls are 10% or more of a run), `unpriced`.
+
+Model advice only considers configurations with at least 30 executions, a known cost per passed test and a real (not scripted) model; at most one piece of advice per configuration: **dominated** (its whole interval is below another's and it costs at least as much per passed test: drop it from future benchmarks) or **cheaper equivalent** (another costs at most 70% as much per passed test, is within 10 points, its interval reaches this one's pass rate, and it had no more critical failures: the runs cannot tell them apart). A cheaper judge is never recommended without calibration. Spending advice: waste (5% or more), the judge's share (40% or more), unpriced models, and the month's pace against the monthly limit (a straight line through sporadic spending, labelled as such). Nothing here changes a model, a judge or a budget.
+
+
+### The Costs & Budgets page and the benchmarking integration
+
+`/super-admin/evaluation/costs` (a tab of the AI Evaluation Center; `components/costs/*`, data module `lib/evalCosts.ts`). Views, kept in the address (`view`, `cur`, and each view's filters): **Overview** (this month and today against the budgets, what is running with its spend so far, how sure the month's money is, the 30-day chart by component, the provider-bill, attribution, anomaly and advice cards; it refreshes every 6 seconds while a job runs), **Cost vs quality** (per dataset version and mode: pass rate with its interval, reliability, latency, the cost of a passed test, the quality/cost frontier and the advice), **Budgets** (the daily and monthly limits, how to change them with a reason, the history), **Usage records** (every cost line, filterable, CSV download, the attribution check), **Reconciliation** (enter a provider bill, reconcile, replace with a correction, the confirmed / estimated / unknown split), **Findings & advice**, **Exchange rates**. Money is shown in USD, or in a second currency from recorded rates: series totals convert each day at that day's rate (`GET /eval/costs/overview|trends?currency=`), single figures use today's rate and say so; a day with no rate stays in dollars and is reported as unconverted. Rates are recorded with a source and never edited (`GET/POST /eval/costs/rates`); a rate more than 20% away from the previous one is recorded with a warning.
+
+Benchmarking: the setup panel asks `/eval/jobs/estimate` for the estimate AND what the run would do to the day and month limits, shows both, and does not offer Start when an enforced limit would refuse it; the results page shows what the benchmark cost all-in (model, judge, retries, unattributed), per model and per passed test, and links to the cost comparison.

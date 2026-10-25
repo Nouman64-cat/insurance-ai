@@ -1,27 +1,14 @@
-// The Evaluation Center's own navigation, in one place: the layout draws its tabs from this list, the old routes redirect through it, and the
-// navigation regression test reads it. Nothing here calls the backend.
-
-export interface CenterTab { id: string; href: string; label: string; match: (path: string) => boolean }
-
+// The Evaluation Studio's old addresses. Each page that used to be a sidebar entry or a tab of the Evaluation Center still has a working link: it is redirected (a real HTTP redirect, query string
+// kept) into the Studio, to the mode or the workbench tool that now holds it. next.config.mjs carries the same table; the navigation test checks the two agree.
 export const CENTER_ROOT = "/super-admin/evaluation";
-export const TEMPLATES_ROUTE = "/super-admin/templates";           // shared operational configuration: it keeps its own route and is linked from here
+export const TEMPLATES_ROUTE = "/super-admin/templates";           // shared operational configuration: it keeps its own route and is linked from the Studio
 
-export const CENTER_TABS: CenterTab[] = [
-  { id: "overview", href: CENTER_ROOT, label: "Overview", match: (p) => p === CENTER_ROOT },
-  { id: "datasets", href: `${CENTER_ROOT}/datasets`, label: "Datasets & Evaluation Templates", match: (p) => p.startsWith(`${CENTER_ROOT}/datasets`) },
-  { id: "drift", href: `${CENTER_ROOT}/drift`, label: "Drift & Change Review", match: (p) => p.startsWith(`${CENTER_ROOT}/drift`) },
-  { id: "benchmarking", href: `${CENTER_ROOT}/benchmarking`, label: "Model Benchmarking", match: (p) => p.startsWith(`${CENTER_ROOT}/benchmarking`) },
-];
-
-/** Where each page that used to be its own sidebar entry lives now. The old address keeps working: it redirects, with its query string. */
 export const MOVED_ROUTES: Record<string, string> = {
-  "/super-admin/datasets": `${CENTER_ROOT}/datasets`,
-  "/super-admin/drift-monitor": `${CENTER_ROOT}/drift`,
-  "/super-admin/llm-benchmarking": `${CENTER_ROOT}/benchmarking`,
+  "/super-admin/datasets": `${CENTER_ROOT}?tool=datasets`,
+  "/super-admin/drift-monitor": `${CENTER_ROOT}?tool=drift`,
+  "/super-admin/llm-benchmarking": `${CENTER_ROOT}?mode=simulate`,
+  [`${CENTER_ROOT}/datasets`]: `${CENTER_ROOT}?tool=datasets`,
+  [`${CENTER_ROOT}/drift`]: `${CENTER_ROOT}?tool=drift`,
+  [`${CENTER_ROOT}/benchmarking`]: `${CENTER_ROOT}?mode=simulate`,
+  [`${CENTER_ROOT}/costs`]: `${CENTER_ROOT}?tool=costs`,
 };
-
-export function crumbsFor(path: string): { label: string; href?: string }[] {
-  const tab = CENTER_TABS.find((t) => t.id !== "overview" && t.match(path));
-  const root = { label: "AI Evaluation Center", href: tab ? CENTER_ROOT : undefined };
-  return tab ? [root, { label: tab.label }] : [root];
-}

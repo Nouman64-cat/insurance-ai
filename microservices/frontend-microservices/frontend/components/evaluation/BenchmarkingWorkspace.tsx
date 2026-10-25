@@ -13,7 +13,7 @@ type Tab = "new" | "live" | "results" | "jobs";
 const TERMINAL = ["succeeded", "failed", "cancelled", "lost"];
 const btnGhost = "px-2.5 py-1 text-[11px] font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg hover:border-slate-300 disabled:opacity-40 transition-all";
 
-function JobsTab({ onOpen, onResults, onRerun }: { onOpen: (j: Job) => void; onResults: (benchmarkId: string) => void; onRerun: (j: Job) => void }) {
+export function JobsTab({ onOpen, onResults, onRerun }: { onOpen: (j: Job) => void; onResults: (benchmarkId: string) => void; onRerun: (j: Job) => void }) {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState<Job | null>(null);

@@ -13,7 +13,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID, uuid4
 
-from sqlalchemy import JSON, BigInteger, Boolean, CheckConstraint, Column, Index, Text, UniqueConstraint, text
+from sqlalchemy import JSON, BigInteger, Boolean, CheckConstraint, Column, Float, Index, Text, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, SQLModel
 
@@ -299,6 +299,7 @@ class EvalCaseResult(SQLModel, table=True):
     cached_tokens: Optional[int] = None
     llm_calls: Optional[int] = None
     judge_cost_usd: Optional[float] = None
+    retry_usage: Optional[list] = Field(default=None, sa_column=Column(JSONB, nullable=True))     # the ledger usage of the earlier attempts that failed and were run again
     ttft_ms: Optional[int] = None                                             # time to first token, where the stream reports it
     turns: Optional[int] = None
     critical_failed: bool = False
@@ -625,7 +626,7 @@ class EvalDriftEvent(SQLModel, table=True):
 # ── Phase 7: cost intelligence. Money is recorded once, in USD, as an append-only line that says WHAT it paid for, how sure we are, and where the
 # number came from. Budgets and exchange rates are append-only too: the current one is the latest row, and every change keeps who and why. ──
 
-COST_COMPONENTS = ("candidate_llm", "agent_llm", "subagent_llm", "judge", "ocr", "embedding", "retry", "fallback", "self_hosted")
+COST_COMPONENTS = ("candidate_llm", "agent_llm", "subagent_llm", "judge", "ocr", "embedding", "retry", "fallback", "unattributed", "self_hosted")
 COST_KINDS = ("confirmed", "estimated", "unknown")
 COST_UNITS = ("tokens", "pages", "calls", "gpu_seconds", "cpu_seconds")
 BUDGET_PERIODS = ("day", "month")
@@ -684,7 +685,7 @@ class EvalCostLine(SQLModel, table=True):
 
     __tablename__ = "eval_cost_lines"
     __table_args__ = (
-        CheckConstraint("component IN ('candidate_llm','agent_llm','subagent_llm','judge','ocr','embedding','retry','fallback','self_hosted')", name="ck_eval_cost_component"),
+        CheckConstraint("component IN ('candidate_llm','agent_llm','subagent_llm','judge','ocr','embedding','retry','fallback','unattributed','self_hosted')", name="ck_eval_cost_component"),
         CheckConstraint("cost_kind IN ('confirmed','estimated','unknown')", name="ck_eval_cost_kind"),
         CheckConstraint("unit_kind IN ('tokens','pages','calls','gpu_seconds','cpu_seconds')", name="ck_eval_cost_unit"),
         CheckConstraint("(cost_kind = 'unknown') = (usd IS NULL)", name="ck_eval_cost_unknown_has_no_amount"),
@@ -697,6 +698,7 @@ class EvalCostLine(SQLModel, table=True):
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     run_id: Optional[str] = Field(default=None, max_length=100)
     case_id: Optional[str] = Field(default=None, max_length=100)
+    repetition: int = 1
     job_id: Optional[UUID] = None
     component: str = Field(max_length=20)
     provider: Optional[str] = Field(default=None, max_length=20)
@@ -708,7 +710,7 @@ class EvalCostLine(SQLModel, table=True):
     usd: Optional[float] = None
     cost_kind: str = Field(max_length=10)
     source: str = Field(sa_column=Column(Text, nullable=False))               # where the number came from: "ledger row + registry price v3", "provider response", ...
-    usage_ref: Optional[str] = Field(default=None, max_length=80)             # the token-ledger row this line was attributed from
+    usage_ref: Optional[str] = Field(default=None, max_length=80)             # a hash of what this line pays for (run, case, repetition, component, service, model, attempt): recorded once
     pricing_version_id: Optional[UUID] = None
     rate_ref: Optional[UUID] = None                                           # the exchange rate recorded for this line, when a second currency is shown
     incurred_at: datetime = Field(default_factory=datetime.utcnow)
@@ -733,6 +735,36 @@ class EvalProviderStatement(SQLModel, table=True):
     billed_usd: float
     reference: Optional[str] = Field(default=None, max_length=120)            # invoice number, dashboard export name
     source: str = Field(sa_column=Column(Text, nullable=False))               # "typed from the OpenAI usage page", "uploaded CSV", ...
+    billed_input_tokens: Optional[int] = Field(default=None, sa_column=Column(BigInteger, nullable=True))        # the token totals the provider's page shows, when it shows them
+    billed_output_tokens: Optional[int] = Field(default=None, sa_column=Column(BigInteger, nullable=True))
+    billed_cached_tokens: Optional[int] = Field(default=None, sa_column=Column(BigInteger, nullable=True))
+    tolerance_pct: float = Field(default=5.0, sa_column=Column(Float, nullable=False, server_default=text("5")))      # how far the recorded figure may be from the bill and still match
+    tolerance_usd: float = Field(default=0.05, sa_column=Column(Float, nullable=False, server_default=text("0.05")))
     supersedes_id: Optional[UUID] = Field(default=None, foreign_key="eval_provider_statements.id")
     entered_by: UUID = Field(foreign_key="users.id")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class EvalReconciliation(SQLModel, table=True):
+    """One comparison of a provider statement with the cost lines of its period, kept as it was when it was made, with who asked for it and any explanation they
+    wrote. Append-only: the live comparison is always recomputed from the lines; this table is the record of what was looked at and said."""
+
+    __tablename__ = "eval_reconciliations"
+    __table_args__ = (
+        CheckConstraint("status IN ('matched','under_recorded','over_recorded','incomplete')", name="ck_eval_reconciliation_status"),
+        Index("ix_eval_reconciliations_statement", "statement_id", "created_at"),
+    )
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    statement_id: UUID = Field(foreign_key="eval_provider_statements.id")
+    status: str = Field(max_length=16)
+    billed_usd: float
+    recorded_usd: float
+    difference_usd: float
+    difference_pct: float
+    unknown_lines: int = 0
+    line_count: int = 0
+    note: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))                             # what the person says explains a difference
+    detail: dict = Field(default_factory=dict, sa_column=Column(JSONB, nullable=False, server_default=text("'{}'::jsonb")))   # tokens, components, the explanation
+    performed_by: UUID = Field(foreign_key="users.id")
     created_at: datetime = Field(default_factory=datetime.utcnow)

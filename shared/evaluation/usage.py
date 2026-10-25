@@ -37,6 +37,7 @@ class Mark:
     started_at: float
     known_ids: frozenset
     readable: bool = True
+    match: Optional[Any] = None              # which ledger rows belong to this execution (its thread id); kept so a failed execution can still be read afterwards
 
 
 @dataclass
@@ -49,6 +50,8 @@ class UsageResult:
     output_tokens: Optional[int] = None
     cached_tokens: Optional[int] = None
     by_model: Dict[str, Dict[str, int]] = field(default_factory=dict)
+    by_service: Dict[str, Dict[str, Dict[str, int]]] = field(default_factory=dict)   # service -> model -> calls and tokens: which part of the application made the calls
+    foreign: Dict[str, Any] = field(default_factory=dict)                            # rows seen in the window that carry another thread id: counted as spend, never as this reply's own calls
     reported_tokens: Optional[Dict[str, Any]] = None   # what the service's own reply said it used: a fallback, never the ledger's figure
     late_rows: List[Dict[str, Any]] = field(default_factory=list)
     waited_seconds: float = 0.0
@@ -59,23 +62,37 @@ class UsageResult:
         return self.calls is not None
 
     def as_dict(self) -> Dict[str, Any]:
-        return {"execution_id": self.execution_id, "status": self.status, "calls": self.calls, "input_tokens": self.input_tokens,
-                "output_tokens": self.output_tokens, "cached_tokens": self.cached_tokens, "by_model": self.by_model,
-                "reported_tokens": self.reported_tokens, "late_rows": len(self.late_rows), "waited_seconds": round(self.waited_seconds, 2),
-                "note": self.note}
+        out = {"execution_id": self.execution_id, "status": self.status, "calls": self.calls, "input_tokens": self.input_tokens,
+               "output_tokens": self.output_tokens, "cached_tokens": self.cached_tokens, "by_model": self.by_model, "by_service": self.by_service,
+               "reported_tokens": self.reported_tokens, "late_rows": len(self.late_rows), "waited_seconds": round(self.waited_seconds, 2),
+               "note": self.note}
+        if self.foreign:
+            out["foreign"] = self.foreign
+        return out
 
 
 def _tokens(rows: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
-    out: Dict[str, Any] = {"input_tokens": 0, "output_tokens": 0, "cached_tokens": 0, "by_model": {}}
+    out: Dict[str, Any] = {"input_tokens": 0, "output_tokens": 0, "cached_tokens": 0, "by_model": {}, "by_service": {}}
     for r in rows:
         for key in ("input_tokens", "output_tokens", "cached_tokens"):
             out[key] += int(r.get(key) or 0)
-        m = out["by_model"].setdefault(r.get("model_name") or "unknown", {"calls": 0, "input_tokens": 0, "output_tokens": 0, "cached_tokens": 0})
-        m["calls"] += 1
-        m["input_tokens"] += int(r.get("input_tokens") or 0)
-        m["output_tokens"] += int(r.get("output_tokens") or 0)
-        m["cached_tokens"] += int(r.get("cached_tokens") or 0)
+        model = r.get("model_name") or "unknown"
+        for bucket in (out["by_model"].setdefault(model, {"calls": 0, "input_tokens": 0, "output_tokens": 0, "cached_tokens": 0}),
+                       out["by_service"].setdefault(r.get("service_name") or "unknown", {}).setdefault(model, {"calls": 0, "input_tokens": 0, "output_tokens": 0, "cached_tokens": 0})):
+            bucket["calls"] += 1
+            bucket["input_tokens"] += int(r.get("input_tokens") or 0)
+            bucket["output_tokens"] += int(r.get("output_tokens") or 0)
+            bucket["cached_tokens"] += int(r.get("cached_tokens") or 0)
     return out
+
+
+def _foreign(rows: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+    """Rows that appeared during an execution but belong to another thread (a late row of an earlier execution, or a call that carries no thread id, such as a
+    conversation title). They are real spend, so their tokens are kept; they are never counted as this reply's own calls."""
+    if not rows:
+        return {}
+    t = _tokens(rows)
+    return {"rows": len(rows), "input_tokens": t["input_tokens"], "output_tokens": t["output_tokens"], "cached_tokens": t["cached_tokens"], "by_model": t["by_model"], "by_service": t["by_service"]}
 
 
 class UsageMeter:
@@ -85,6 +102,8 @@ class UsageMeter:
         self._fetch = fetch
         self._poll, self._quiet, self._max = poll_seconds, quiet_seconds, max_wait_seconds
         self._open: Optional[str] = None
+        self._mark: Optional[Mark] = None
+        self._abandoned: Optional[Mark] = None
 
     async def _rows(self) -> Optional[Sequence[Dict[str, Any]]]:
         try:
@@ -92,17 +111,28 @@ class UsageMeter:
         except Exception:                          # noqa: BLE001 — an unreadable ledger is a result (unavailable), not a crash
             return None
 
-    async def begin(self, execution_id: str) -> Mark:
+    async def begin(self, execution_id: str, *, match: Optional[Any] = None) -> Mark:
         if self._open is not None:
             raise OverlappingExecution(f"execution {self._open!r} is still being measured; measure one execution at a time")
         self._open = execution_id
         rows = await self._rows()
-        return Mark(execution_id=execution_id, started_at=time.monotonic(), known_ids=frozenset(str(r["id"]) for r in rows or ()),
-                    readable=rows is not None)
+        self._mark = Mark(execution_id=execution_id, started_at=time.monotonic(), known_ids=frozenset(str(r["id"]) for r in rows or ()), readable=rows is not None, match=match)
+        self._abandoned = None
+        return self._mark
 
     def abandon(self) -> None:
-        """Close the open window without a result (the call itself failed before there was anything to measure)."""
+        """Close the open window without a result (the call itself failed). What the failed execution had already asked of a model was still paid for:
+        `settle_abandoned` reads it, and the runner must call it before the next execution starts."""
+        self._abandoned = self._mark if self._open is not None else self._abandoned
         self._open = None
+
+    async def settle_abandoned(self) -> Optional["UsageResult"]:
+        """The ledger rows of the execution whose window was abandoned, or None when no window was abandoned. Read once, then forgotten."""
+        mark, self._abandoned = self._abandoned, None
+        if mark is None or self._open is not None:
+            return None
+        self._open = mark.execution_id
+        return await self.end(mark, match=mark.match)
 
     async def end(self, mark: Mark, *, expected_min_calls: int = 0, reported_tokens: Optional[Dict[str, Any]] = None,
                   ambiguous: bool = False, match: Optional[Any] = None) -> UsageResult:
@@ -110,6 +140,7 @@ class UsageMeter:
         knows must have happened (a reply that read a document proves at least one call); 0 means "none is proven".
         `match(row) -> bool` keeps only the rows that belong to this execution (a chat thread's rows, by thread id); rows that appeared in
         the window but do not match are reported in the note (they are another execution's, never counted here)."""
+        match = match if match is not None else mark.match
         try:
             if ambiguous:
                 return UsageResult(mark.execution_id, "ambiguous", None, reported_tokens=reported_tokens,
@@ -125,11 +156,12 @@ class UsageMeter:
                     return UsageResult(mark.execution_id, "unavailable", None, reported_tokens=reported_tokens, waited_seconds=waited,
                                        note="the ledger could not be read after the call")
                 rows = [r for r in current if str(r["id"]) not in mark.known_ids]
-                foreign = 0
+                foreign_rows: List[Dict[str, Any]] = []
                 if match is not None:
-                    foreign = len(rows)
-                    rows = [r for r in rows if match(r)]
-                    foreign -= len(rows)
+                    matched = [r for r in rows if match(r)]
+                    foreign_rows = [r for r in rows if r not in matched]
+                    rows = matched
+                foreign = len(foreign_rows)
                 if len(rows) != last_count:
                     last_count, last_change = len(rows), waited
                 enough = len(rows) >= expected_min_calls
@@ -141,9 +173,9 @@ class UsageMeter:
                 waited += self._poll
             if len(rows) < expected_min_calls:
                 return UsageResult(mark.execution_id, "missing", None, rows=list(rows), reported_tokens=reported_tokens, waited_seconds=waited,
-                                   note=f"the reply proves {expected_min_calls} call(s) but the ledger shows {len(rows)}: cost unknown")
-            return UsageResult(mark.execution_id, "attributed", len(rows), rows=list(rows), reported_tokens=reported_tokens,
-                               waited_seconds=waited, note=(f"{foreign} ledger row(s) in the window belong to other executions and are not counted" if foreign else ""),
+                                   foreign=_foreign(foreign_rows), note=f"the reply proves {expected_min_calls} call(s) but the ledger shows {len(rows)}: cost unknown")
+            return UsageResult(mark.execution_id, "attributed", len(rows), rows=list(rows), reported_tokens=reported_tokens, foreign=_foreign(foreign_rows),
+                               waited_seconds=waited, note=(f"{foreign} ledger row(s) in the window carry another thread id: counted as spend, not as this reply's calls" if foreign else ""),
                                **_tokens(rows))
         finally:
             self._open = None

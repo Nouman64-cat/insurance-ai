@@ -7,6 +7,7 @@ import {
   type BenchmarkDetail, type BenchmarkListItem, type Breakdown, type HistoryPoint, type ModelResult,
 } from "@/lib/evalBenchmarks";
 import { GroupedBars, IntervalPlot, Legend, Trend, useHidden, type Series } from "./charts";
+import BenchmarkCost from "./CostCard";
 import TraceDrawer from "./TraceDrawer";
 
 const btnGhost = "px-3 py-1.5 text-xs font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg hover:border-slate-300 disabled:opacity-40 transition-all";
@@ -148,6 +149,8 @@ export default function Results({ initialId, onOpened }: { initialId: string | n
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 min-w-0">
             {labels.filter((l) => !hidden.has(l)).map((l) => <Card key={l} r={models[l]} color={modelColor(l, labels)} rank={rank(l)} />)}
           </div>
+
+          {!bench.synthetic && <BenchmarkCost benchmarkId={bench.benchmark_id} />}
 
           <div className="grid gap-4 xl:grid-cols-2 min-w-0 [&>*]:min-w-0">
             <IntervalPlot title={tx("Accuracy with its 95% interval")} subtitle={tx("Wider ranges mean less evidence. Overlapping ranges do not show one model is better.")} hidden={hidden}

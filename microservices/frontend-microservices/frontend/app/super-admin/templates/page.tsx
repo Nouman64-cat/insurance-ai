@@ -39,9 +39,9 @@ function TemplatesContent() {
         <p className="text-sm text-slate-500 mt-0.5 max-w-3xl">{tx("The lead acquisition form and the Proposal, exactly as the product asks them today. Add, remove or reword fields, save a draft, then publish. A published change becomes the live version, is recorded with your reason, and the evaluation team is told which tests depend on it.")}</p>
       </div>
       <div className="flex flex-wrap gap-3 text-xs" data-testid="template-links">
-        <Link className="text-blue-600 hover:underline" href={`/super-admin/evaluation/drift?q=${encodeURIComponent(key ? (list.find((t) => t.key === key)?.title ?? "") : "")}`}>{tx("Review items caused by template changes")}</Link>
-        <Link className="text-blue-600 hover:underline" href="/super-admin/evaluation/drift?view=knowledge">{tx("Assistant knowledge for these templates")}</Link>
-        <Link className="text-blue-600 hover:underline" href="/super-admin/evaluation/datasets">{tx("Evaluation datasets that test these forms")}</Link>
+        <Link className="text-blue-600 hover:underline" href={`/super-admin/evaluation?tool=drift&q=${encodeURIComponent(key ? (list.find((t) => t.key === key)?.title ?? "") : "")}`}>{tx("Review items caused by template changes")}</Link>
+        <Link className="text-blue-600 hover:underline" href="/super-admin/evaluation?tool=drift&view=knowledge">{tx("Assistant knowledge for these templates")}</Link>
+        <Link className="text-blue-600 hover:underline" href="/super-admin/evaluation?tool=datasets">{tx("Evaluation datasets that test these forms")}</Link>
       </div>
       {notice && (
         <div className={`text-xs rounded-lg px-3 py-2 border flex justify-between gap-3 ${notice.kind === "ok" ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-red-50 border-red-200 text-red-600"}`} role="status">

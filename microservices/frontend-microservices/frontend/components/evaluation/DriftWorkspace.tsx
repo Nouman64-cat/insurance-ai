@@ -21,7 +21,7 @@ function Badge({ children, cls }: { children: React.ReactNode; cls: string }) {
   return <span className={`inline-block px-2 py-0.5 rounded-full border text-[10px] font-semibold ${cls}`}>{children}</span>;
 }
 
-function Decision({ item, action, onClose, onDone }: { item: DriftItem; action: DriftAction; onClose: () => void; onDone: () => void }) {
+export function Decision({ item, action, onClose, onDone }: { item: DriftItem; action: DriftAction; onClose: () => void; onDone: () => void }) {
   const [note, setNote] = useState("");
   const [expected, setExpected] = useState("");
   const [busy, setBusy] = useState(false);
@@ -84,10 +84,10 @@ function ItemDrawer({ id, onClose, onChanged }: { id: string; onClose: () => voi
         <button type="button" className={btnGhost} onClick={onClose}>{tx("Close")}</button>
       </div>
       <div className="flex flex-wrap gap-2 text-[11px]" data-testid="item-links">
-        {item.dataset && <Link className="text-blue-600 hover:underline" href={`/super-admin/evaluation/datasets?dataset=${encodeURIComponent(item.dataset)}`}>{tx("Open the dataset")} ({item.dataset})</Link>}
+        {item.dataset && <Link className="text-blue-600 hover:underline" href={`/super-admin/evaluation?tool=datasets&dataset=${encodeURIComponent(item.dataset)}`}>{tx("Open the dataset")} ({item.dataset})</Link>}
         {item.registry_item?.startsWith("template:") && <Link className="text-blue-600 hover:underline" href={`/super-admin/templates?key=${encodeURIComponent(item.registry_item.slice(9))}`}>{tx("Open the template")}</Link>}
         {item.detail?.provenance?.template && <Link className="text-blue-600 hover:underline" href={`/super-admin/templates?key=${encodeURIComponent(String(item.detail.provenance.template))}`}>{tx("Open the template")}</Link>}
-        <Link className="text-blue-600 hover:underline" href="/super-admin/evaluation/benchmarking">{tx("Run a benchmark")}</Link>
+        <Link className="text-blue-600 hover:underline" href="/super-admin/evaluation?mode=simulate">{tx("Run a benchmark")}</Link>
       </div>
       {item.affected_cases.length > 0 && <div><div className="text-[11px] font-bold text-slate-500 mb-1">{tx("Cases affected")}</div><div className="flex flex-wrap gap-1">{item.affected_cases.map((c) => <span key={c} className="px-2 py-0.5 rounded bg-slate-100 text-[11px] font-mono text-slate-600">{c}</span>)}</div></div>}
       {diff.length > 0 && (

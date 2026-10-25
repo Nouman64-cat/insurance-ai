@@ -94,6 +94,7 @@ _RESULT_COLUMNS = [
     ("judge_cost_usd", "DOUBLE PRECISION"), ("ttft_ms", "INTEGER"), ("turns", "INTEGER"), ("critical_failed", "BOOLEAN NOT NULL DEFAULT FALSE"),
     ("layer_scores", "JSONB NOT NULL DEFAULT '{}'::jsonb"), ("verdict", "JSONB NOT NULL DEFAULT '{}'::jsonb"),
     ("trace_summary", "JSONB NOT NULL DEFAULT '{}'::jsonb"), ("trace_key", "VARCHAR(600)"), ("trace_sha256", "VARCHAR(64)"),
+    ("retry_usage", "JSONB"),
 ]
 EVAL_RUN_COLUMNS_DDL = (
     [(f"eval_runs.{c}", f"ALTER TABLE eval_runs ADD COLUMN IF NOT EXISTS {c} {t}") for c, t in _RUN_COLUMNS]
@@ -156,11 +157,23 @@ TEMPLATE_DDL = [
 
 
 # Phase 7: cost lines, budgets, exchange rates and provider statements are append-only (a correction is a new row).
-_COST_APPEND_ONLY = ("eval_cost_lines", "eval_budget_limits", "eval_exchange_rates", "eval_provider_statements")
+_COST_APPEND_ONLY = ("eval_cost_lines", "eval_budget_limits", "eval_exchange_rates", "eval_provider_statements", "eval_reconciliations")
 EVAL_COST_DDL = [
     ("eval_guard_append_only: function",
      "CREATE OR REPLACE FUNCTION eval_guard_append_only() RETURNS trigger AS $$ "
      "BEGIN RAISE EXCEPTION '% is append-only: a row is never changed or removed', TG_TABLE_NAME USING ERRCODE = '23514'; END; $$ LANGUAGE plpgsql"),
+    # M3 added the 'unattributed' component and the repetition column; both are safe to apply again.
+    ("eval_cost_lines: repetition column", "ALTER TABLE eval_cost_lines ADD COLUMN IF NOT EXISTS repetition integer NOT NULL DEFAULT 1"),
+    ("eval_cost_lines: drop the first component rule", "ALTER TABLE eval_cost_lines DROP CONSTRAINT IF EXISTS ck_eval_cost_component"),
+    ("eval_cost_lines: component rule",
+     "ALTER TABLE eval_cost_lines ADD CONSTRAINT ck_eval_cost_component CHECK (component IN "
+     "('candidate_llm','agent_llm','subagent_llm','judge','ocr','embedding','retry','fallback','unattributed','self_hosted'))"),
+    # M4: what the provider's page showed besides the money, and how closely the recorded figure must agree
+    ("eval_provider_statements: billed_input_tokens", "ALTER TABLE eval_provider_statements ADD COLUMN IF NOT EXISTS billed_input_tokens bigint"),
+    ("eval_provider_statements: billed_output_tokens", "ALTER TABLE eval_provider_statements ADD COLUMN IF NOT EXISTS billed_output_tokens bigint"),
+    ("eval_provider_statements: billed_cached_tokens", "ALTER TABLE eval_provider_statements ADD COLUMN IF NOT EXISTS billed_cached_tokens bigint"),
+    ("eval_provider_statements: tolerance_pct", "ALTER TABLE eval_provider_statements ADD COLUMN IF NOT EXISTS tolerance_pct double precision NOT NULL DEFAULT 5"),
+    ("eval_provider_statements: tolerance_usd", "ALTER TABLE eval_provider_statements ADD COLUMN IF NOT EXISTS tolerance_usd double precision NOT NULL DEFAULT 0.05"),
 ] + [
     step
     for table in _COST_APPEND_ONLY

@@ -57,7 +57,7 @@ async function main(): Promise<number> {
   const scans = await listScans();
   check("the scans tab lists the stored scan", scans.scans.some((s) => s.scan_id.includes(TAG)), scans.scans.map((s) => s.scan_id));
   const reg = await getRegistry();
-  check("the watched items cover calculations, plans, rules, workflows and templates", ["calc", "plan", "rule", "workflow", "template"].every((t) => reg.some((i) => i.type === t)), [...new Set(reg.map((i) => i.type))]);
+  check("the watched items cover calculations, plans, rules, workflows and templates", ["calc", "plan", "rule", "workflow", "template"].every((t) => reg.some((i) => i.type === t)), Array.from(new Set(reg.map((i) => i.type))));
   const premium = reg.find((i) => i.key === "calc:premium")!;
   const vs = await getVersions("calc:premium");
   check("an item's versions and dependent cases can be read", vs.versions.length >= 1 && premium.dependent_cases === vs.dependents.length, vs);

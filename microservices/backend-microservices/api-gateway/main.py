@@ -1080,6 +1080,21 @@ async def proxy_eval_drift(path: str, request: Request):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/eval/drift{path}")
 
 
+@app.api_route("/eval/budget{path:path}", methods=["GET", "PUT", "OPTIONS"], include_in_schema=False)
+async def proxy_eval_budget(path: str, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/eval/budget{path}")
+
+
+@app.api_route("/eval/costs{path:path}", methods=["GET", "POST", "OPTIONS"], include_in_schema=False)
+async def proxy_eval_costs(path: str, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/eval/costs{path}")
+
+
+@app.api_route("/eval/studio{path:path}", methods=["GET", "OPTIONS"], include_in_schema=False)
+async def proxy_eval_studio(path: str, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/eval/studio{path}")
+
+
 @app.api_route("/eval/models{path:path}", methods=["GET", "POST", "PATCH", "OPTIONS"], include_in_schema=False)
 async def proxy_eval_models(path: str, request: Request):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/eval/models{path}")

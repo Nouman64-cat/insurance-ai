@@ -31,10 +31,10 @@ class Ledger:
     def __init__(self):
         self.rows, self.broken, self.n = [], False, 0
 
-    def add(self, model="gpt-4o-mini", inp=900, out=40):
+    def add(self, model="gpt-4o-mini", inp=900, out=40, service="OCR Engine", thread=None):
         self.n += 1
-        self.rows.append({"id": f"r{self.n}", "service_name": "OCR Engine", "model_name": model, "input_tokens": inp, "output_tokens": out,
-                          "cached_tokens": 0})
+        self.rows.append({"id": f"r{self.n}", "service_name": service, "model_name": model, "input_tokens": inp, "output_tokens": out,
+                          "cached_tokens": 0, "thread_id": thread})
 
     async def add_later(self, delay, **kw):
         await asyncio.sleep(delay)
@@ -231,6 +231,68 @@ def test_ocr_missing_pieces_are_errors() -> None:
         raise AssertionError("no error without the OCR engine")
 
 
+def test_calls_are_grouped_by_the_service_that_made_them() -> None:
+    async def go():
+        ledger = Ledger(); m = meter(ledger); mark = await m.begin("e1")
+        ledger.add(service="Chat Agent", model="gpt-4.1", inp=1000, out=50)
+        ledger.add(service="Chat Agent — Claims Specialist", model="gpt-4.1", inp=400, out=20)
+        ledger.add(service="Chat Agent — Claims Specialist", model="gpt-4.1", inp=100, out=10)
+        return await m.end(mark, expected_min_calls=3)
+    r = run(go())
+    assert r.by_service["Chat Agent"]["gpt-4.1"]["calls"] == 1 and r.by_service["Chat Agent — Claims Specialist"]["gpt-4.1"] == {"calls": 2, "input_tokens": 500, "output_tokens": 30, "cached_tokens": 0}
+    assert r.by_model["gpt-4.1"]["calls"] == 3 and r.input_tokens == 1500, "the per-model totals are unchanged"
+    assert r.as_dict()["by_service"] == r.by_service
+
+
+def test_rows_with_another_thread_are_kept_as_spend_not_as_this_replys_calls() -> None:
+    async def go():
+        ledger = Ledger(); m = meter(ledger); mark = await m.begin("e1", match=lambda r: r.get("thread_id") == "t1")
+        ledger.add(service="Chat Agent", thread="t1", inp=800, out=40)
+        ledger.add(service="Chat Agent — Title Generator", thread=None, inp=120, out=12)           # a title is generated with no thread id
+        return await m.end(mark, expected_min_calls=1)
+    r = run(go())
+    assert r.status == "attributed" and r.calls == 1 and r.input_tokens == 800, "the reply's own calls are only the ones with its thread"
+    assert r.foreign["rows"] == 1 and r.foreign["input_tokens"] == 120 and r.foreign["by_service"]["Chat Agent — Title Generator"]["gpt-4o-mini"]["calls"] == 1, r.foreign
+    assert "foreign" in r.as_dict() and "another thread" in r.note
+
+
+def test_a_result_without_foreign_rows_does_not_carry_the_key() -> None:
+    async def go():
+        ledger = Ledger(); m = meter(ledger); mark = await m.begin("e1", match=lambda r: r.get("thread_id") == "t1")
+        ledger.add(thread="t1")
+        return await m.end(mark, expected_min_calls=1)
+    assert "foreign" not in run(go()).as_dict()
+
+
+def test_an_execution_that_failed_can_still_be_read_afterwards() -> None:
+    async def go():
+        ledger = Ledger(); m = meter(ledger); await m.begin("e1", match=lambda r: r.get("thread_id") == "t1")
+        ledger.add(thread="t1", inp=700, out=30)
+        ledger.add(thread="other", inp=5, out=5)
+        m.abandon()                                                    # the call failed: the window is closed unread
+        first = await m.settle_abandoned()
+        second = await m.settle_abandoned()
+        await m.begin("e2")                                            # and the next execution may start
+        return first, second
+    first, second = run(go())
+    assert first.status == "attributed" and first.calls == 1 and first.input_tokens == 700 and first.foreign["rows"] == 1, "what the failed execution spent is read, with its own thread filter"
+    assert second is None, "it is read once and then forgotten"
+
+
+def test_nothing_is_settled_when_no_window_was_abandoned() -> None:
+    async def go():
+        ledger = Ledger(); m = meter(ledger); mark = await m.begin("e1"); ledger.add(); await m.end(mark, expected_min_calls=1)
+        return await m.settle_abandoned()
+    assert run(go()) is None
+
+
+def test_a_new_window_forgets_an_abandoned_one_it_was_never_asked_to_settle() -> None:
+    async def go():
+        ledger = Ledger(); m = meter(ledger); await m.begin("e1"); m.abandon(); await m.begin("e2")
+        return await m.settle_abandoned()
+    assert run(go()) is None, "settling is for the runner right after the failure; a later window never reads an earlier one's rows"
+
+
 TESTS = [test_a_call_that_is_recorded_is_attributed, test_a_late_write_is_waited_for, test_a_call_with_no_row_is_unknown_not_free,
          test_an_unreadable_ledger_is_unavailable, test_a_ledger_unreadable_before_the_call_is_unavailable,
          test_a_row_that_arrives_after_the_wait_is_reconciled_not_lost, test_only_one_execution_is_measured_at_a_time,
@@ -238,7 +300,10 @@ TESTS = [test_a_call_that_is_recorded_is_attributed, test_a_late_write_is_waited
          test_ocr_reading_a_document_reports_the_calls_it_caused, test_ocr_refusal_proves_zero_model_calls,
          test_ocr_refusal_that_still_called_a_model_is_not_hidden, test_ocr_unknown_cost_leaves_llm_calls_unobserved,
          test_ocr_without_a_meter_does_not_claim_zero_calls, test_ocr_engine_without_a_model_is_an_environment_error,
-         test_ocr_missing_pieces_are_errors]
+         test_ocr_missing_pieces_are_errors, test_calls_are_grouped_by_the_service_that_made_them,
+         test_rows_with_another_thread_are_kept_as_spend_not_as_this_replys_calls, test_a_result_without_foreign_rows_does_not_carry_the_key,
+         test_an_execution_that_failed_can_still_be_read_afterwards, test_nothing_is_settled_when_no_window_was_abandoned,
+         test_a_new_window_forgets_an_abandoned_one_it_was_never_asked_to_settle]
 
 
 def run_all() -> int:

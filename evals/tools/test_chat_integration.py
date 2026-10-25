@@ -234,10 +234,93 @@ async def t_a_prompt_version_that_does_not_exist_is_refused_before_anything_runs
             raise AssertionError(f"{bad!r} was accepted")
 
 
+async def t_what_a_failed_attempt_spent_is_kept_with_the_final_result() -> None:
+    """An attempt that fails with an infrastructure error may already have asked a model for something. That was paid for: it travels with the result that
+    follows the retry (`retry_usage`), and the cost lines record it as the run's own `retry` spending."""
+    bundle = eval_runner.bundle_from_source()
+    selected, _ = select_cases(bundle.cases, case_ids=["IND-LEAD-001"])
+    runner = eval_runner.Runner(bundle, args(retries=2))
+    spent = {"status": "attributed", "calls": 1, "input_tokens": 900, "output_tokens": 0, "cached_tokens": 0, "by_model": {"gpt-4o-mini": {"calls": 1, "input_tokens": 900, "output_tokens": 0, "cached_tokens": 0}}}
+    attempts = []
+
+    async def fake(case, repetition):
+        attempts.append(1)
+        if len(attempts) < 3:
+            return runner._make(case, repetition, "infrastructure_error", "timeout", usage=spent if len(attempts) == 1 else None)      # the second attempt spent nothing the ledger could see
+        return runner._make(case, repetition, "passed", usage={**spent, "input_tokens": 100})
+    runner._execute_once = fake
+    await runner.execute_one(selected[0], 1)
+    done = runner.results[0]
+    assert done.status == "passed" and done.attempts == 3, (done.status, done.attempts)
+    assert done.retry_usage == [spent], "the first attempt's spending is kept; an attempt with no usage adds nothing"
+    row = json.loads((runner.out / "results.jsonl").read_text().splitlines()[0])
+    assert row["retry_usage"] == [spent], "and it reaches results.jsonl, which is what the platform ingests"
+
+
+async def t_a_failed_execution_reports_what_it_spent_before_it_failed() -> None:
+    """An execution that fails mid-way (a timeout, an error from the agent) closes its ledger window unread; the runner then reads the rows the failed
+    execution caused, before the next execution resets the ledger. Without that the money is spent and never recorded."""
+    from shared.evaluation.chat_executor import ChatExecutionError
+    from shared.evaluation.usage import UsageMeter
+    bundle = eval_runner.bundle_from_source()
+    selected, _ = select_cases(bundle.cases, case_ids=["IND-LEAD-001"])
+    runner = eval_runner.Runner(bundle, args(retries=0, budget_usd=5.0))
+    rows: List[dict] = []
+
+    async def ledger():
+        return list(rows)
+    runner.meter = UsageMeter(ledger, poll_seconds=0.02, quiet_seconds=0.1, max_wait_seconds=0.6)
+
+    class Env:
+        ids: dict = {}
+
+        async def fresh(self):
+            return None
+    runner.env = Env()
+    original_resolve, original_chat = eval_runner.resolve_case, eval_runner.execute_chat_case
+
+    async def failing_chat(case, rt, *, execution_id):
+        await rt.meter.begin(execution_id, match=lambda r: r.get("thread_id") == "t1")
+        rows.append({"id": "1", "service_name": "Chat Agent", "model_name": "mock-oracle", "input_tokens": 700, "output_tokens": 30, "cached_tokens": 0, "thread_id": "t1"})
+        rt.meter.abandon()
+        raise ChatExecutionError("the agent stopped answering")
+    eval_runner.resolve_case, eval_runner.execute_chat_case = (lambda case, ids: case), failing_chat
+    try:
+        await runner.execute_one(selected[0], 1)
+    finally:
+        eval_runner.resolve_case, eval_runner.execute_chat_case = original_resolve, original_chat
+    r = runner.results[0]
+    assert r.status == "infrastructure_error" and r.usage and r.usage["status"] == "attributed" and r.usage["calls"] == 1 and r.usage["input_tokens"] == 700, r.usage
+    assert r.usage["by_service"]["Chat Agent"]["mock-oracle"]["calls"] == 1, "with the service that made the call"
+    nothing = await runner._settle()
+    assert nothing is None, "nothing is settled twice"
+
+
+async def t_the_ledger_names_the_service_behind_each_call_and_the_lines_account_for_it() -> None:
+    """With the real agent in the stack: every ledger row has the name of the service that made the call, the usage groups them by service, and the cost lines
+    built from the result hold exactly the tokens the ledger showed (scripted model: free, and never called a fallback)."""
+    from shared.evaluation import cost_lines
+    from shared.evaluation.pricing import PriceTable
+    r = await run(["IND-LEAD-001"])
+    x = only(r, "IND-LEAD-001")
+    u = x.usage
+    assert u and u["status"] == "attributed" and u["calls"] >= 1, u
+    assert u["by_service"], "the usage says which service made the calls"
+    assert sum(m["calls"] for models in u["by_service"].values() for m in models.values()) == u["calls"], "every call is in exactly one service"
+    assert all(name.startswith("Chat Agent") for name in u["by_service"]), list(u["by_service"])
+    result = x.as_dict()
+    lines = cost_lines.lines_for_result(r.run_id, result, table=PriceTable.builtin(), candidate="mock/mock-oracle", mode="agent", synthetic=True)
+    assert lines and all(l["cost_kind"] == "estimated" and l["usd"] == 0.0 for l in lines), "a scripted model costs nothing, and that is a known zero"
+    assert not any(l["component"] == "fallback" for l in lines), "a scripted model is never a fallback"
+    assert sum(l["input_units"] for l in lines) == u["input_tokens"] and sum(l["output_units"] for l in lines) == u["output_tokens"], "the lines hold exactly the tokens the ledger showed"
+    print(f"        services seen: {sorted(u['by_service'])}  foreign rows: {(u.get('foreign') or {}).get('rows', 0)}")
+
+
 TESTS: List[Callable] = [t_a_conversation_is_driven_observed_and_judged_in_layers, t_without_a_judge_the_case_is_decided_without_it_and_says_so,
                          t_a_lazy_agent_fails_and_the_judge_sees_the_empty_answer, t_a_reckless_agent_is_stopped_by_the_permission_gate_and_otherwise_fails_critically,
                          t_skills_and_prompt_variants_change_what_the_agent_sends_to_the_model, t_another_users_conversation_is_refused_and_left_untouched, t_the_trace_is_closed_to_other_users, t_the_only_way_out_is_the_allowlisted_provider_through_the_proxy,
-                         t_an_infrastructure_error_is_retried_but_a_verdict_is_not, t_every_repetition_gets_a_new_thread_and_a_clean_database,
+                         t_an_infrastructure_error_is_retried_but_a_verdict_is_not, t_what_a_failed_attempt_spent_is_kept_with_the_final_result,
+                         t_a_failed_execution_reports_what_it_spent_before_it_failed, t_the_ledger_names_the_service_behind_each_call_and_the_lines_account_for_it, t_every_repetition_gets_a_new_thread_and_a_clean_database,
                          t_a_real_model_without_a_key_blocks_chat_cases_and_calls_nothing, t_a_chat_case_without_a_model_is_skipped_never_passed,
                          t_events_describe_the_run_in_order, t_the_judge_service_scores_every_metric_and_refuses_a_real_provider_without_a_key,
                          t_a_prompt_version_that_does_not_exist_is_refused_before_anything_runs]

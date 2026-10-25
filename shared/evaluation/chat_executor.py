@@ -148,13 +148,13 @@ async def execute_chat_case(case: Dict[str, Any], rt: ChatRuntime, *, execution_
             async with rt.env.engine.connect() as c:
                 snaps.append(await snapshot(c, tenant_id))
 
-    mark = await rt.meter.begin(execution_id) if rt.meter else None
+    mark = await rt.meter.begin(execution_id, match=lambda r: str(r.get("thread_id")) == thread_id) if rt.meter else None
     started = time.monotonic()
     try:
         convo = await run_conversation(rt.client, chat_url=rt.chat_url, headers=headers, thread_id=thread_id, messages=texts,
                                        confirmations=(case.get("metadata") or {}).get("confirmations", "auto_approve"), on_turn=on_turn,
                                        timeout=rt.timeout, locale_for_turn=(case.get("metadata") or {}).get("locale"))
-    except Exception:
+    except BaseException:                          # a timeout cancels this task: the runner reads what the ledger shows (UsageMeter.settle_abandoned)
         if rt.meter:
             rt.meter.abandon()
         raise
@@ -217,11 +217,11 @@ async def execute_thread_case(case: Dict[str, Any], rt: ChatRuntime, *, executio
         await _mock(rt, "start", {"case_id": case["case_id"]})
         await _mock(rt, "turn", {"turn": 1})
     from shared.evaluation.chat import fetch_trace, _consume
-    mark = await rt.meter.begin(execution_id) if rt.meter else None
+    mark = await rt.meter.begin(execution_id, match=lambda r: str(r.get("thread_id")) == thread_id) if rt.meter else None
     try:
         events, status, _, _ = await _consume(rt.client, "POST", f"{rt.chat_url}/chat/stream", owner_headers,
                                               {"thread_id": thread_id, "message": opening, "platform": "web", "locale": "en"}, rt.timeout)
-    except Exception:
+    except BaseException:
         if rt.meter:
             rt.meter.abandon()
         raise
