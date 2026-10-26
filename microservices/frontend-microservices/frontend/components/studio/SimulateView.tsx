@@ -8,6 +8,9 @@ import { tx } from "@/lib/i18n/tx";
 import { rerunJob, streamJob, type BenchmarkForm, type Job, type JobEvent } from "@/lib/evalBenchmarks";
 import { getGraph, studioHref, type StudioGraph } from "@/lib/evalStudio";
 import { useQueryState } from "@/lib/useQueryState";
+import { usePathname, useRouter } from "next/navigation";
+import { EMPTY } from "@/components/benchmarking/SetupPanel";
+import { PARAM_NAMES, loadDraft, paramsToForm, saveDraft } from "@/lib/simulateDraft";
 import EcosystemMap, { type NodeOverlay } from "./EcosystemMap";
 
 const TERMINAL = ["succeeded", "failed", "cancelled", "lost"];
@@ -56,7 +59,29 @@ export default function SimulateView() {
   const [dataset] = useQueryState("dataset");
   const [provider] = useQueryState("models");
   const [sim, setSim] = useQueryState("sim", "new");
-  const [, setForm] = useState<BenchmarkForm | null>(null);
+  const [form, setForm] = useState<BenchmarkForm | null>(null);
+  const router = useRouter();
+  const pathname = usePathname();
+  // The setup form comes back as the person left it: from the address when it has form parameters (back button, reload, shared link), else from the draft kept in this browser (clicked away, then returned).
+  const start = useRef<{ form: Partial<BenchmarkForm> | null } | null>(null);
+  if (start.current === null) {
+    const sp = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : new URLSearchParams();
+    start.current = { form: paramsToForm((n) => sp.get(n)) ?? loadDraft() };
+  }
+  // The form is kept in a draft in this browser, not in the address (which would grow into a long, unreadable link). Nothing is written until the form has loaded its dataset, or the empty first render would wipe what was saved.
+  useEffect(() => {
+    if (!form || !form.dataset) return;
+    const t = setTimeout(() => saveDraft(form, EMPTY), 300);
+    return () => clearTimeout(t);
+  }, [form]);
+  // An older link that still carries form parameters is read once (above) and then tidied, so the address stays short.
+  useEffect(() => {
+    const sp = new URLSearchParams(window.location.search);
+    if (!PARAM_NAMES.some((n) => sp.has(n))) return;
+    PARAM_NAMES.forEach((n) => sp.delete(n));
+    const qs = sp.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }, []);                                          // eslint-disable-line react-hooks/exhaustive-deps
   const [job, setJob] = useState<Job | null>(null);
   const [events, setEvents] = useState<JobEvent[]>([]);
   const [graph, setGraph] = useState<StudioGraph | null>(null);
@@ -66,7 +91,7 @@ export default function SimulateView() {
   const [, setSub] = useQueryState("sub");
   const seen = useRef<Set<number>>(new Set());
   const running = !!job && !TERMINAL.includes(job.state);
-  const view = sim === "watch" && job ? "watch" : sim === "runs" ? "runs" : "new";
+  const view = sim === "map" ? "map" : sim === "watch" && job ? "watch" : sim === "runs" ? "runs" : "new";
 
   const loadGraph = useCallback(() => getGraph().then(setGraph).catch(() => undefined), []);
   useEffect(() => { loadGraph(); }, [loadGraph]);
@@ -89,11 +114,18 @@ export default function SimulateView() {
   const started = (j: Job) => { setJob(j); setSim("watch"); };
   async function rerun(j: Job) { try { started(await rerunJob(j.id)); } catch { setSim("runs"); } }
 
+  // The ecosystem map has its own page: the run gets the full width, and the map gets room to be read.
   const map = (
-    <section className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
-      <h2 className="text-xs font-bold text-slate-900 dark:text-slate-50">{running ? tx("Running now") : tx("What a run touches")}</h2>
-      <p className="mb-2 text-[11px] text-slate-500">{running ? tx("The nodes update from the run's own event stream.") : tx("These nodes light up as a run works through the dataset.")}</p>
-      {focus ? <EcosystemMap graph={focus} selected={selected} onSelect={setSelected} overlays={overlays} compact /> : <p className="py-8 text-center text-xs text-slate-400">{tx("Loading…")}</p>}
+    <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900" aria-label={tx("Ecosystem map")} data-testid="sim-map">
+      <div className="mb-3 flex flex-wrap items-center gap-3">
+        <div className="mr-auto min-w-0">
+          <h2 className="text-base font-extrabold text-slate-900 dark:text-slate-50">{running ? tx("Running now") : tx("What a run touches")}</h2>
+          <p className="text-[11px] text-slate-500">{running ? tx("The nodes update from the run's own event stream.") : tx("These nodes light up as a run works through the dataset.")}</p>
+        </div>
+        {job ? <button type="button" onClick={() => setSim("watch")} className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-700" data-testid="back-to-run">{tx("Back to the run")}</button>
+          : <button type="button" onClick={() => setSim("new")} className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-sky-400 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200">{tx("Set up a run")}</button>}
+      </div>
+      {focus ? <EcosystemMap graph={focus} selected={selected} onSelect={setSelected} overlays={overlays} /> : <p className="py-8 text-center text-xs text-slate-400">{tx("Loading…")}</p>}
     </section>
   );
 
@@ -105,21 +137,19 @@ export default function SimulateView() {
           <button type="button" onClick={() => setSim("watch")} disabled={!job} aria-current={view === "watch" ? "step" : undefined} className={`${seg(view === "watch")} disabled:cursor-not-allowed disabled:opacity-40`} data-sim="watch" title={job ? undefined : tx("Start a run to watch it")}>
             {running && <span className="mr-1.5 inline-block h-2 w-2 animate-pulse rounded-full bg-emerald-500 align-middle" aria-hidden />}{tx("Watch")}
           </button>
+          <button type="button" onClick={() => setSim("map")} aria-current={view === "map" ? "step" : undefined} className={seg(view === "map")} data-sim="map">{tx("Ecosystem map")}</button>
           <button type="button" onClick={() => setSim("runs")} aria-current={view === "runs" ? "step" : undefined} className={seg(view === "runs")} data-sim="runs">{tx("Recent runs")}</button>
         </nav>
         <p className="text-[11px] text-slate-500">
-          {view === "new" ? tx("Scripted models are a free simulation on isolated fixtures. GPT, Gemini and Claude are real runs that spend money; the estimate comes first.") : view === "watch" ? tx("Cancel stops after the case in flight; a stopped run keeps what it has.") : tx("Open a run to watch it, see its results, or run it again.")}
+          {view === "map" ? tx("Every part of the platform a run touches, drawn from the platform's own records. It updates live while a run is going.") : view === "new" ? tx("Scripted models are a free simulation on isolated fixtures. GPT, Gemini and Claude are real runs that spend money; the estimate comes first.") : view === "watch" ? tx("Cancel stops after the case in flight; a stopped run keeps what it has.") : tx("Open a run to watch it, see its results, or run it again.")}
         </p>
       </div>
 
-      {view === "new" && <SetupPanel onStarted={started} initialDataset={dataset || undefined} initialProvider={provider || undefined} onForm={setForm} aside={<details className="rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900"><summary className="cursor-pointer px-4 py-3 text-xs font-bold text-slate-900 dark:text-slate-50">{tx("What a run touches")}</summary><div className="px-3 pb-3">{map}</div></details>} />}
+      {view === "new" && <SetupPanel onStarted={started} initialDataset={dataset || start.current?.form?.dataset || undefined} initialProvider={provider || undefined} initialForm={start.current?.form} onForm={setForm} aside={<details className="rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900"><summary className="cursor-pointer px-4 py-3 text-xs font-bold text-slate-900 dark:text-slate-50">{tx("What a run touches")}</summary><div className="px-3 pb-3">{map}</div></details>} />}
 
-      {view === "watch" && job && (
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
-          <div className="min-w-0 order-2 xl:order-1"><LiveRun job={job} onJob={setJob} onOpenResults={openResults} /></div>
-          <div className="min-w-0 order-1 xl:sticky xl:top-24 xl:order-2 xl:self-start">{map}</div>
-        </div>
-      )}
+      {view === "watch" && job && <LiveRun job={job} onJob={setJob} onOpenResults={openResults} onOpenMap={() => setSim("map")} />}
+
+      {view === "map" && map}
 
       {view === "runs" && <JobsTab onOpen={(j) => { setJob(j); setSim("watch"); }} onResults={openResults} onRerun={rerun} />}
     </div>

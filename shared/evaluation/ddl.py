@@ -105,7 +105,9 @@ EVAL_RUN_COLUMNS_DDL = (
     + [("eval_metric_scores: drop old trigger", "DROP TRIGGER IF EXISTS trg_eval_guard_metric_scores ON eval_metric_scores"),
        ("eval_metric_scores: trigger",
         "CREATE TRIGGER trg_eval_guard_metric_scores BEFORE INSERT OR UPDATE OR DELETE ON eval_metric_scores "
-        "FOR EACH ROW EXECUTE FUNCTION eval_guard_run_results()")]
+        "FOR EACH ROW EXECUTE FUNCTION eval_guard_run_results()"),
+       # `blocked_missing_credentials` (27 characters) did not fit the original varchar(20): a run whose judge was blocked could not be stored at all
+       ("eval_metric_scores.status: widen", "ALTER TABLE eval_metric_scores ALTER COLUMN status TYPE varchar(40)")]
 )
 
 

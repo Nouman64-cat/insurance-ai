@@ -62,6 +62,19 @@ class NoCredentials(Exception):
     pass
 
 
+def strict_schema(node: Any) -> Any:
+    """A JSON schema with every object closed (additionalProperties false) and every property required, which is what a strict structured-output endpoint accepts. Works through nested models ($defs, items, anyOf)."""
+    if isinstance(node, list):
+        return [strict_schema(x) for x in node]
+    if not isinstance(node, dict):
+        return node
+    out = {k: strict_schema(v) for k, v in node.items()}
+    if out.get("type") == "object" or "properties" in out:
+        out["additionalProperties"] = False
+        out["required"] = list((out.get("properties") or {}).keys())
+    return out
+
+
 def endpoint_for(judge_model: str) -> Dict[str, str]:
     provider, _, model = judge_model.partition("/")
     provider = provider.lower()
@@ -109,7 +122,12 @@ def make_judge(cfg: Dict[str, str]):
         def _request(self, prompt: str, schema: Any) -> Dict[str, Any]:
             body: Dict[str, Any] = {"model": self.cfg["model"], "messages": [{"role": "user", "content": prompt}], "temperature": 0}
             if schema is not None:
-                body["response_format"] = {"type": "json_schema", "json_schema": {"name": schema.__name__, "schema": schema.model_json_schema()}}
+                spec: Dict[str, Any] = {"name": schema.__name__, "schema": schema.model_json_schema()}
+                if "api.anthropic.com" in self.cfg["base_url"]:
+                    # Anthropic's OpenAI-compatible endpoint accepts only a strict schema: `strict` must be true and every object must say additionalProperties is false
+                    # (OpenAI takes the schema as it is, so the other providers are left alone).
+                    spec = {"name": spec["name"], "schema": strict_schema(spec["schema"]), "strict": True}
+                body["response_format"] = {"type": "json_schema", "json_schema": spec}
             return body
 
         def _finish(self, data: Dict[str, Any], schema: Any):

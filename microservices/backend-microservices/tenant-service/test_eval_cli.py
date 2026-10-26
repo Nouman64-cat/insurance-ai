@@ -28,7 +28,7 @@ def cli(*args: str):
 
 async def two_runs():
     async with database._session_factory() as s:
-        rs = (await s.exec(select(EvalRun).where(EvalRun.state == "complete", EvalRun.synthetic_model == False, EvalRun.dataset_slug == "individual-single-turn", EvalRun.executions >= 40)  # noqa: E712
+        rs = (await s.exec(select(EvalRun).where(EvalRun.state == "complete", EvalRun.synthetic_model == False, EvalRun.model_label != None, EvalRun.dataset_slug == "individual-single-turn", EvalRun.executions >= 40)  # noqa: E712
                            .order_by(EvalRun.started_at.desc()).limit(2))).all()
         return [r.run_id for r in rs], [(r.executions, r.passed) for r in rs]
 

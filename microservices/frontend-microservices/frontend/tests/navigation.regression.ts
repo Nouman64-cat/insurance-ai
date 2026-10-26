@@ -66,7 +66,7 @@ async function main(): Promise<number> {
   check("simulate: the setup with its estimate and budget impact, the live run with cancel and rerun, and the jobs list are mounted", has("components/studio/SimulateView.tsx", "<SetupPanel", "<LiveRun", "<JobsTab") && has("components/benchmarking/SetupPanel.tsx", "previewWithBudget", "startJob")
     && has("components/benchmarking/LiveRun.tsx", "cancelJob", "rerunJob", "streamJob") && has("components/evaluation/BenchmarkingWorkspace.tsx", "export function JobsTab", "cancelJob", "rerunJob"));
   check("investigate: executions, benchmark results with the heatmap, and the model and cost comparison are mounted; a trace opens a replayable timeline", has("components/studio/InvestigateView.tsx", "<Executions", "<Results", "<ModelsPanel", "<TraceDrawer")
-    && has("components/benchmarking/Results.tsx", "<CaseHeatmap", "<BenchmarkCost", "<TraceDrawer") && has("components/benchmarking/TraceDrawer.tsx", "<TraceTimeline"));
+    && has("components/benchmarking/Results.tsx", "<VisualAnalytics", "<BenchmarkCost", "<TraceDrawer") && has("components/benchmarking/VisualAnalytics.tsx", "<CaseHeatmap") && has("components/benchmarking/TraceDrawer.tsx", "<TraceTimeline"));
   check("explore: the map, its health filter, the node panel and the change-impact lens are mounted", has("components/studio/ExploreView.tsx", "<EcosystemMap", "<NodePanel", "<ImpactExplorer", "<HealthStrip"));
   const ix = read("components/studio/ImpactExplorer.tsx");
   check("change impact: one search combobox (keyboard: arrows, Enter, Esc, '/'), type filters with counts, a needs-review switch, sort, an honest empty state, a switcher that is itself a search, a way back, and the chain as a timeline with the next step first",
@@ -116,6 +116,38 @@ async function main(): Promise<number> {
   check("accessibility: no meaning rests on colour alone in the analytics: every status segment is named, every rate is written as a number, a grey cell says it did not apply", av.includes("data-status={s}") && av.includes("pc(c.pass_rate)") && av.includes("did not apply") && av.includes("Grey: it did not apply"));
 
   check("the sidebar shows the number of open drift findings beside Drift review, for Super Admins only, from the drift overview, and shows nothing if it cannot be read", sidebar.includes("getOverview") && sidebar.includes('userRole !== "SuperAdmin") return') && sidebar.includes('data-testid="drift-badge"') && sidebar.includes('endsWith("tool=drift")') && sidebar.includes("setOpenDrift(0)"));
+
+  const sim = read("components/studio/SimulateView.tsx"), draft = read("lib/simulateDraft.ts");
+  check("simulate keeps its setup form when the person leaves and comes back: every field is kept in a browser draft, not in the address, which stays short and an older long link is tidied (after the dataset has loaded, so the empty first render never wipes it), restored once, and storage access is guarded",
+    sim.includes("paramsToForm") && sim.includes("loadDraft") && sim.includes("saveDraft") && !sim.includes("formToParams") && sim.includes("PARAM_NAMES.forEach") && sim.includes("!form.dataset") && sim.includes("initialForm={start.current?.form}")
+    && has("components/benchmarking/SetupPanel.tsx", "restore.current", "initialForm") && (draft.match(/try \{/g) ?? []).length >= 3 && draft.includes("PARAM_NAMES"));
+
+  check("the Watch page shows the four stages of a run (queued, running, storing results, results ready) from the job's real state, retries the lookup of the stored results, and offers a check-again when they are missing",
+    has("components/benchmarking/LiveRun.tsx", "<RunStepper", "resultsChecked", "tries < (fresh.state ===", "setRecheck") && has("components/benchmarking/RunStepper.tsx", 'aria-label={tx("Run progress")}', 'aria-current={s.state === "current" ? "step" : undefined}', "check-again", "motion-reduce:animate-none")
+    && has("lib/runSteps.ts", "ingest-group", "envctl.py worker"));
+
+  check("the benchmark results page has a comparison table of every measured quantity (quality, reliability, speed, cost and tokens) built from the stored summary, with the best marked only among real models, a switch for what differs, collapsible groups and a CSV download",
+    has("components/benchmarking/Results.tsx", "<ComparisonTable") && has("components/benchmarking/ComparisonTable.tsx", "<caption", 'scope="row"', "aria-expanded={showAll}", "diff-only", "tableToCsv", "highlights", "never count", "opacity-60") && has("lib/benchmarkTable.ts", "!models[l]?.synthetic", "onlyDifferences", "executions_with_unknown_cost"));
+
+  const resultsSrc = read("components/benchmarking/Results.tsx"), vaSrc = read("components/benchmarking/VisualAnalytics.tsx");
+  check("the benchmark results page opens on the visual analytics (four tabs, only the open one drawn) and has a two-way switch to the comparison table, which says which view is shown and keeps the choice in the address; the page itself draws no chart",
+    ["<GroupedBars", "<IntervalPlot", "<Trend", "<CaseHeatmap"].every((c) => !resultsSrc.includes(c)) && resultsSrc.includes('data-testid="view-switch"') && resultsSrc.includes("aria-pressed={view === v}") && resultsSrc.includes('useQueryState("vw")') && resultsSrc.includes('useQueryState("va", "perf")')
+    && resultsSrc.includes('const view: "visual" | "table" = vw === "table" ? "table" : "visual"') && resultsSrc.includes('view === "visual" && <VisualAnalytics') && resultsSrc.includes('view === "table"')
+    && ["<GroupedBars", "<IntervalPlot", "<Trend", "<CaseHeatmap"].every((c) => vaSrc.includes(c)) && ['tab === "perf"', 'tab === "quality"', 'tab === "cases"', 'tab === "history"'].every((c) => vaSrc.includes(c)));
+
+  check("the judge has its own always-visible section on the results page (in both views): the judge and its calibration, a bordered score table per metric and model with bars, the average and the judging cost, the three honest states (scored, no scores, no judge), and links to the answers the judge failed",
+    has("components/benchmarking/Results.tsx", "<JudgePanel") && has("components/benchmarking/JudgePanel.tsx", 'data-testid="judge-panel"', 'data-testid="judge-calibration"', 'data-testid="judge-table"', 'data-testid="judge-none"', '? "alert" : "note"', "judge-reasons-link", "fl: \"L2\"", "<caption")
+    && has("lib/judgeView.ts", '"none" | "unscored" | "scored"', "not_trusted", "!b.summary.models[l].synthetic") && read("components/benchmarking/Results.tsx").indexOf("<JudgePanel") < read("components/benchmarking/Results.tsx").indexOf('view === "visual" && <VisualAnalytics'));
+
+  const simSrc = read("components/studio/SimulateView.tsx"), liveSrc = read("components/benchmarking/LiveRun.tsx");
+  check("the Watch page gives the run the full width and the ecosystem map its own page: a Simulate step for the map, a button on the run header that opens it and a way back, no side-by-side map; the run header, model cards, responses (right-to-left text handled) and events sit in one column layout",
+    simSrc.includes('data-sim="map"') && simSrc.includes('view === "map" && map') && simSrc.includes("onOpenMap={() => setSim(\"map\")}") && simSrc.includes('data-testid="back-to-run"') && !simSrc.includes("xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]")
+    && liveSrc.includes("<RunHeader") && liveSrc.includes("<RunStepper") && liveSrc.includes('dir="auto"') && liveSrc.includes("visibleEvents") && liveSrc.includes('data-testid="events-detail"') && liveSrc.includes("lg:grid-cols-2") && !liveSrc.includes("stateStyle")
+    && has("components/benchmarking/RunHeader.tsx", 'role="progressbar"', "break-all", "data-testid=\"open-map\"", "motion-reduce:animate-none"));
+
+  check("the simulate setup is a guided pipeline: five steps across the top (each openable, with its state and a summary), one step at a time with a plain question, help text, Back and Next that wait for what cannot be skipped, templates as cards on the first step, a review step with the budget and a start button, and every advanced option (skills, what to score, limits, the gate) folded into an Advanced section",
+    has("components/benchmarking/SetupPanel.tsx", "<SetupSteps", "setupSteps(", 'data-testid="step-next"', 'data-testid="step-back"', "canAdvance(step, form)", 'data-testid="presets"', "applyPreset", 'data-testid="review-list"', 'data-testid="start-run-review"', 'data-testid="start-run"', "Advanced: agent skills", "Advanced: what to score", "Advanced: limits and quality gate", "COPY[step].question")
+    && read("components/benchmarking/SetupPanel.tsx").indexOf("Advanced: limits and quality gate") < read("components/benchmarking/SetupPanel.tsx").indexOf('data-testid="limits-gate"') && has("components/benchmarking/SetupSteps.tsx", "<ol", 'aria-current={s.current ? "step" : undefined}', "sr-only") && has("lib/setupSteps.ts", "problemStep", "canAdvance"));
 
   // 7. no figures typed into the pages
   const studioFiles = fs.readdirSync(path.join(ROOT, "components/studio")).map((f) => `components/studio/${f}`);

@@ -138,6 +138,22 @@ def group_run_ids() -> list[str]:
     return [Path(v["run_folder"]).name for v in json.loads(text).get("variants", []) if v.get("run_folder")]
 
 
+INGEST_FAILURES: list[str] = []         # what could not be stored (and why) since the caller last cleared it: a run that cannot be ingested must never be reported as stored
+
+
+def _ingest_step(cmd: list, label: str, show: bool = False) -> bool:
+    """Runs one ingest step. A failed step is recorded with the last lines of its own error output, and echoed, so the cause is never lost."""
+    r = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
+    if r.returncode:
+        tail = [l for l in ((r.stderr or "") + "\n" + (r.stdout or "")).splitlines() if l.strip()][-2:]
+        INGEST_FAILURES.append(f"{label}: {' | '.join(t.strip()[:200] for t in tail) or 'step failed (no output)'}")
+        print(f"ingest: step failed: {' '.join(cmd[:4])}\n" + "\n".join(tail), file=sys.stderr)
+        return False
+    if show and r.stdout.strip():
+        print(r.stdout.strip())
+    return True
+
+
 def ingest_benchmark(status: int) -> int:
     """Store the newest benchmark's comparison (after its runs, which it refers to)."""
     import tempfile
@@ -149,8 +165,7 @@ def ingest_benchmark(status: int) -> int:
                  ["docker", "compose", "cp", f"{tmp}/benchmark.json", "tenant-service:/tmp/benchmark.json"],
                  ["docker", "compose", "exec", "-T", "tenant-service", "python", "eval_lake_cli.py", "benchmark-ingest", "/tmp/benchmark.json"]]
         for cmd in steps:
-            if subprocess.run(cmd, cwd=ROOT).returncode:
-                print(f"ingest: step failed: {' '.join(cmd[:4])}", file=sys.stderr)
+            if not _ingest_step(cmd, "benchmark", show=True):
                 return status
     return status
 
@@ -183,8 +198,7 @@ def ingest_run(run_id: str, status: int) -> int:
                  ["docker", "compose", "cp", f"{tmp}/{run_id}", f"tenant-service:/tmp/runs/{run_id}"],
                  ["docker", "compose", "exec", "-T", "tenant-service", "python", "eval_lake_cli.py", "run-ingest", f"/tmp/runs/{run_id}"]]
         for cmd in steps:
-            if subprocess.run(cmd, cwd=ROOT, stdout=subprocess.DEVNULL if cmd[-2:-1] != ["run-ingest"] and "run-ingest" not in cmd else None).returncode:
-                print(f"ingest: step failed: {' '.join(cmd[:4])}", file=sys.stderr)
+            if not _ingest_step(cmd, f"run {run_id}", show="run-ingest" in cmd):
                 return status
     return status
 
@@ -213,6 +227,15 @@ def main(argv: list[str]) -> int:
         return compose("exec", "-T", "eval-runner", "python", "-m", "evals.tools.test_runner_integration", *rest)
     if cmd == "run":
         return run_cases(rest)
+    if cmd == "ingest":                                      # ingest RUN_ID... : store runs that finished but were not stored (recovery after a failed ingest)
+        for run_id in rest:
+            ingest_run(run_id, 0)
+        print("\n".join(["FAILED: " + f for f in INGEST_FAILURES]) or "stored")
+        return 1 if INGEST_FAILURES else 0
+    if cmd == "ingest-group":                                # the newest comparison group and its benchmark
+        ingest_after(0, True, group=True, benchmark=True)
+        print("\n".join(["FAILED: " + f for f in INGEST_FAILURES]) or "stored")
+        return 1 if INGEST_FAILURES else 0
     if cmd == "worker":
         import job_worker
         return job_worker.main(rest)

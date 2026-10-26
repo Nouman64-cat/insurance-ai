@@ -341,7 +341,7 @@ class EvalMetricScore(SQLModel, table=True):
     score: Optional[float] = None                                              # None: the judge could not score (blocked), never a made-up 0
     threshold: Optional[float] = None
     passed: Optional[bool] = None
-    status: str = Field(default="scored", max_length=20)                       # scored | blocked_missing_credentials | judge_error
+    status: str = Field(default="scored", max_length=40)                       # scored | blocked_missing_credentials | judge_error
     reason: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
     judge_model: Optional[str] = Field(default=None, max_length=120)
     judge_cost_usd: Optional[float] = None

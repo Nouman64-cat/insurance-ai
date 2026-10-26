@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import SetupSteps from "./SetupSteps";
+import { COPY, ORDER, canAdvance, nextOf, prevOf, setupSteps, type StepId } from "@/lib/setupSteps";
 import { tx } from "@/lib/i18n/tx";
 import { show, previewWithBudget, type BudgetStatus } from "@/lib/evalCosts";
 import {
@@ -30,24 +32,7 @@ const METRIC_HELP: Record<Metric, string> = {
   custom: "The case's own criterion.",
 };
 
-const EMPTY: BenchmarkForm = { dataset: "", version: "", mode: "agent", models: [], repetitions: 3, judge: "", metrics: [], stages: [], temperature: "0", budget: "2", stopOnCritical: false, allowSameJudge: false, skills: "default", maxLatencyMs: "", maxTokens: "", maxCostUsd: "", gate: false, gateMinPassPct: "90" };
-
-/** A section of the builder: a numbered header that says what was chosen, and a body that can be closed. */
-function Section({ n, title, summary, open, onToggle, children, testId }: { n: number; title: string; summary: ReactNode; open: boolean; onToggle: () => void; children: ReactNode; testId?: string }) {
-  return (
-    <section className="rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900" data-testid={testId}>
-      <button type="button" onClick={onToggle} aria-expanded={open} className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400">
-        <span className="inline-flex h-6 w-6 flex-none items-center justify-center rounded-full bg-blue-50 text-xs font-bold text-blue-700 dark:bg-blue-950/60 dark:text-sky-200" aria-hidden>{n}</span>
-        <span className="min-w-0 flex-1">
-          <span className="block text-sm font-bold text-slate-900 dark:text-slate-50">{title}</span>
-          <span className="block truncate text-[11px] text-slate-500" data-testid={testId ? `${testId}-summary` : undefined}>{summary}</span>
-        </span>
-        <span className={`flex-none text-slate-400 transition-transform ${open ? "rotate-180" : ""}`} aria-hidden>▾</span>
-      </button>
-      {open && <div className="space-y-4 border-t border-slate-100 px-4 py-4 dark:border-slate-800">{children}</div>}
-    </section>
-  );
-}
+export const EMPTY: BenchmarkForm = { dataset: "", version: "", mode: "agent", models: [], repetitions: 3, judge: "", metrics: [], stages: [], temperature: "0", budget: "2", stopOnCritical: false, allowSameJudge: false, skills: "default", maxLatencyMs: "", maxTokens: "", maxCostUsd: "", gate: false, gateMinPassPct: "90" };
 
 function Check({ ok, children }: { ok: boolean; children: ReactNode }) {
   return (
@@ -58,8 +43,8 @@ function Check({ ok, children }: { ok: boolean; children: ReactNode }) {
   );
 }
 
-export default function SetupPanel({ onStarted, initialDataset, initialProvider, onForm, aside }: {
-  onStarted: (job: Job) => void; initialDataset?: string; initialProvider?: string; onForm?: (form: BenchmarkForm) => void; aside?: ReactNode;
+export default function SetupPanel({ onStarted, initialDataset, initialProvider, initialForm, onForm, aside }: {
+  onStarted: (job: Job) => void; initialDataset?: string; initialProvider?: string; initialForm?: Partial<BenchmarkForm> | null; onForm?: (form: BenchmarkForm) => void; aside?: ReactNode;
 }) {
   const [datasets, setDatasets] = useState<DatasetSummary[]>([]);
   const [detail, setDetail] = useState<DatasetDetail | null>(null);
@@ -72,9 +57,12 @@ export default function SetupPanel({ onStarted, initialDataset, initialProvider,
   const [starting, setStarting] = useState(false);
   const [confirm, setConfirm] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [open, setOpen] = useState<Record<string, boolean>>({ models: true, scope: true, method: true, judge: false });
+  const [step, setStep] = useState<StepId>("models");                                  // the step that is open; every step can be opened from the pipeline at the top
+  const [visited, setVisited] = useState<Set<StepId>>(new Set<StepId>(["models"]));
+  const panelRef = useRef<HTMLElement | null>(null);
   const seq = useRef(0);
   const applied = useRef(false);
+  const restore = useRef<Partial<BenchmarkForm> | null>(initialForm ?? null);          // a form brought back from the address or the saved draft, applied once the dataset has loaded
 
   useEffect(() => {
     (async () => {
@@ -84,7 +72,12 @@ export default function SetupPanel({ onStarted, initialDataset, initialProvider,
         setDatasets(usable);
         setModels(ms);
         const wanted = usable.find((d) => d.slug === initialDataset) ?? usable.find((d) => d.slug.includes("single")) ?? usable[0];
-        if (wanted) setForm((f) => ({ ...f, dataset: wanted.slug }));
+        if (wanted) {
+          const back = restore.current;
+          // the saved choices are applied as they were; the dataset-dependent ones (version, stages) are checked against the dataset in the next effect
+          setForm((f) => ({ ...f, ...(back ?? {}), dataset: wanted.slug }));
+          if (back?.repetitions && !(REPETITION_CHOICES as readonly number[]).includes(back.repetitions)) setCustom(String(back.repetitions));
+        }
       } catch (e) {
         setModels([]);
         setError(e instanceof Error ? e.message : "Could not load datasets and models.");
@@ -98,7 +91,12 @@ export default function SetupPanel({ onStarted, initialDataset, initialProvider,
       .then((d) => {
         setDetail(d);
         const published = d.versions.filter((v) => v.state === "published");
-        setForm((f) => ({ ...f, version: published.find((v) => v.version === d.latest_version)?.version ?? published[published.length - 1]?.version ?? "", stages: [] }));
+        const back = restore.current;
+        restore.current = null;
+        const fallback = published.find((v) => v.version === d.latest_version)?.version ?? published[published.length - 1]?.version ?? "";
+        // a saved version is kept only if it is still published, and saved stages only if the dataset still has them
+        const version = back?.version && published.some((v) => v.version === back.version) ? back.version : fallback;
+        setForm((f) => ({ ...f, version, stages: back?.stages && version === back.version ? back.stages : [] }));
       })
       .catch((e) => setError(e instanceof Error ? e.message : "Could not load the dataset."));
   }, [form.dataset]);
@@ -149,18 +147,18 @@ export default function SetupPanel({ onStarted, initialDataset, initialProvider,
   const set = <K extends keyof BenchmarkForm>(k: K, v: BenchmarkForm[K]) => setForm((f) => ({ ...f, [k]: v }));
   const toggle = <K extends "models" | "metrics" | "stages">(k: K, v: string) =>
     setForm((f) => ({ ...f, [k]: (f[k] as string[]).includes(v) ? (f[k] as string[]).filter((x) => x !== v) : [...(f[k] as string[]), v] }) as BenchmarkForm);
-  const flip = (k: string) => setOpen((o) => ({ ...o, [k]: !o[k] }));
 
   // presets: a starting point from what the registry really has, never a made-up model
   const cheapest = useMemo(() => real.filter((m) => m.current_price).sort((a, b) => (a.current_price!.output_per_m + a.current_price!.input_per_m) - (b.current_price!.output_per_m + b.current_price!.input_per_m)).slice(0, 2), [real]);
   const realJudge = judges.find((j) => !j.synthetic && !cheapest.some((c) => c.label === j.label));
   const freeJudge = judges.find((j) => j.synthetic);
   const presets = [
-    { id: "free", label: "Free dry run", hint: "Two scripted models on isolated fixtures: checks the machinery, spends nothing.", ok: scripted.length >= 2,
+    { id: "free", badge: "FREE · about a minute", label: "Free dry run", hint: "Two scripted models on isolated fixtures. Checks that everything is wired up and spends nothing. The results say nothing about real models.", ok: scripted.length >= 2,
       apply: () => { setCustom(""); setForm((f) => ({ ...f, models: scripted.slice(0, 2).map((m) => m.label), judge: freeJudge?.label ?? "", metrics: [], repetitions: 1, mode: "agent", budget: "1", stages: [] })); } },
-    { id: "real", label: "Compare the two cheapest real models", hint: "The two lowest-priced GPT, Gemini or Claude models in the registry, three repetitions. Spends money.", ok: cheapest.length >= 2,
+    { id: "real", badge: "SPENDS MONEY · recommended", label: "Compare two real models", hint: "The two lowest-priced real models in the registry, three repetitions, judged by another model. Check the cost estimate before you start.", ok: cheapest.length >= 2,
       apply: () => { setCustom(""); setForm((f) => ({ ...f, models: cheapest.map((m) => m.label), judge: realJudge?.label ?? "", metrics: [], repetitions: 3, mode: "agent", budget: "2", stages: [] })); } },
   ];
+  const applyPreset = (p: (typeof presets)[number]) => { p.apply(); setVisited(new Set<StepId>(ORDER)); setStep("review"); };
   const clear = () => { setCustom(""); setForm((f) => ({ ...EMPTY, dataset: f.dataset, version: f.version })); };
 
   const cost = preview?.cost;
@@ -176,6 +174,13 @@ export default function SetupPanel({ onStarted, initialDataset, initialProvider,
 
   const why = !modelsOk ? tx("Choose at least two models to compare.") : !scopeOk ? tx("Choose a published dataset version.") : otherProblems[0] ? tx(otherProblems[0]) : previewing ? tx("Checking the request with the backend…")
     : refused[0] ? refused[0] : cost?.error ? cost.error : budgetRefuses ? tx("A spending limit would refuse this run.") : starting ? tx("Starting…") : null;
+
+  const steps = setupSteps(form, { current: step, visited, problems, ready: canStart });
+  const goTo = (id: StepId) => {
+    setStep(id);
+    setVisited((v) => new Set(v).add(id));
+    setTimeout(() => panelRef.current?.scrollIntoView({ block: "nearest", behavior: typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" }), 30);
+  };
 
   async function start() {
     if (!request) return;
@@ -221,7 +226,7 @@ export default function SetupPanel({ onStarted, initialDataset, initialProvider,
           <span className="text-xl font-bold text-blue-700 dark:text-sky-300" data-testid="estimate-total">{cost && !cost.error ? `${usd(cost.usd.total)}${cost.usd.complete ? "" : "+"}` : previewing ? "…" : "—"}</span>
         </div>
         {cost && !cost.error && <p className="mt-0.5 text-[10px] text-slate-400">{tx(cost.note)}</p>}
-        {!cost && !previewing && <p className="mt-0.5 text-[10px] text-slate-400">{tx("Appears when the request is complete.")}</p>}
+        {!cost && !previewing && <p className={`mt-0.5 text-[10px] ${problems[0] ? "font-semibold text-amber-700 dark:text-amber-300" : "text-slate-400"}`} data-testid="estimate-waiting">{problems[0] ? `${tx("No estimate yet:")} ${tx(problems[0])}` : tx("Appears when the request is complete.")}</p>}
         {cost && !cost.error && (
           <details className="mt-2 text-[11px]">
             <summary className="cursor-pointer font-semibold text-slate-600 dark:text-slate-300">{tx("Where it comes from")}</summary>
@@ -268,136 +273,209 @@ export default function SetupPanel({ onStarted, initialDataset, initialProvider,
 
   return (
     <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,26rem)]">
-      <div className="min-w-0 space-y-3 pb-24 lg:pb-0">
+      <div className="min-w-0 space-y-4 pb-24 lg:pb-0">
         {error && <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600" role="alert">{error}</div>}
 
-        <div className="flex flex-wrap items-center gap-2" data-testid="presets">
-          <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{tx("Start from")}</span>
-          {presets.map((p) => <button key={p.id} type="button" disabled={!p.ok || !models} title={p.ok ? tx(p.hint) : tx("Not enough models in the registry for this")} onClick={p.apply} className={ghost} data-preset={p.id}>{tx(p.label)}</button>)}
-          {(form.models.length > 0 || form.stages.length > 0 || form.judge) && <button type="button" onClick={clear} className="text-[11px] font-semibold text-slate-400 underline hover:text-slate-600">{tx("Clear")}</button>}
-        </div>
+        <SetupSteps steps={steps} onGo={goTo} />
 
-        <Section n={1} title={tx("Models to compare")} testId="sec-models" open={open.models} onToggle={() => flip("models")}
-          summary={form.models.length === 0 ? tx("none chosen yet · pick at least two") : `${form.models.length} ${tx("chosen")}: ${form.models.map((m) => m.split("/")[1]).join(", ")}`}>
-          {!models ? (
-            <div className="grid gap-2 sm:grid-cols-2" aria-busy="true">{[0, 1, 2, 3].map((i) => <div key={i} className="h-14 animate-pulse rounded-lg bg-slate-100 dark:bg-slate-800" />)}</div>
-          ) : candidates.length === 0 ? <p className="text-xs text-slate-500">{tx("No model is registered as a candidate. Register one under Model registry first.")}</p> : (
-            <>
-              {Object.entries(byProvider).map(([provider, list]) => (
-                <div key={provider}>
-                  <div className="mb-1.5 flex items-center gap-2 text-[11px] font-semibold text-slate-500"><span>{PROVIDER_NAME[provider] ?? provider}</span><span className="rounded bg-amber-50 px-1.5 py-px text-[9px] font-bold text-amber-700">{tx("spends money")}</span></div>
-                  <div className="grid gap-2 sm:grid-cols-2" role="group" aria-label={PROVIDER_NAME[provider] ?? provider}>
-                    {list.map((m) => <ModelCard key={m.label} m={m} on={form.models.includes(m.label)} onToggle={() => toggle("models", m.label)} />)}
-                  </div>
-                </div>
+        {step === "models" && (
+          <section aria-label={tx("Start from a template")} className="space-y-2" data-testid="presets">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-sm font-extrabold text-slate-900 dark:text-slate-50">{tx("Start from a template")} <span className="font-normal text-slate-400">{tx("or build your own below")}</span></h2>
+              {(form.models.length > 0 || form.stages.length > 0 || form.judge) && <button type="button" onClick={clear} className="text-[11px] font-semibold text-slate-500 underline hover:text-slate-800">{tx("Start over")}</button>}
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {presets.map((p) => (
+                <button key={p.id} type="button" disabled={!p.ok || !models} onClick={() => applyPreset(p)} data-preset={p.id} title={p.ok ? undefined : tx("Not enough models in the registry for this")}
+                  className="rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm transition-colors hover:border-blue-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900">
+                  <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-bold ${p.id === "free" ? "bg-sky-50 text-sky-700" : "bg-amber-50 text-amber-800"}`}>{tx(p.badge)}</span>
+                  <b className="mt-1.5 block text-sm font-extrabold text-slate-900 dark:text-slate-50">{tx(p.label)}</b>
+                  <span className="mt-0.5 block text-[11px] leading-relaxed text-slate-500">{tx(p.hint)}</span>
+                </button>
               ))}
-              {scripted.length > 0 && (
-                <div>
-                  <div className="mb-1.5 flex items-center gap-2 text-[11px] font-semibold text-slate-500"><span>{tx("Scripted stand-ins")}</span><span className="rounded bg-sky-50 px-1.5 py-px text-[9px] font-bold text-sky-700">{tx("free")}</span></div>
-                  <div className="grid gap-2 sm:grid-cols-2" role="group" aria-label={tx("Scripted stand-ins")}>
-                    {scripted.map((m) => <ModelCard key={m.label} m={m} on={form.models.includes(m.label)} onToggle={() => toggle("models", m.label)} />)}
+            </div>
+          </section>
+        )}
+
+        <section ref={panelRef} className="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900" data-testid={`sec-${step === "questions" ? "scope" : step}`} data-step-panel={step} aria-label={tx(COPY[step].label)}>
+          <header className="border-b border-slate-100 px-5 py-4 dark:border-slate-800">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-blue-700 dark:text-sky-300">{tx("Step")} {ORDER.indexOf(step) + 1} {tx("of")} {ORDER.length}{COPY[step].optional ? ` · ${tx("optional")}` : ""}</p>
+            <h2 className="mt-0.5 text-lg font-extrabold text-slate-900 dark:text-slate-50">{tx(COPY[step].question)}</h2>
+            <p className="mt-1 text-xs leading-relaxed text-slate-500">{tx(COPY[step].help)}</p>
+          </header>
+
+          <div className="space-y-5 px-5 py-5">
+            {step === "models" && (
+              <>
+                {!models ? (
+                  <div className="grid gap-2 sm:grid-cols-2" aria-busy="true">{[0, 1, 2, 3].map((i) => <div key={i} className="h-14 animate-pulse rounded-lg bg-slate-100 dark:bg-slate-800" />)}</div>
+                ) : candidates.length === 0 ? <p className="text-xs text-slate-500">{tx("No model is registered as a candidate. Register one under Model registry first.")}</p> : (
+                  <>
+                    {Object.entries(byProvider).map(([provider, list]) => (
+                      <div key={provider}>
+                        <div className="mb-1.5 flex items-center gap-2 text-[11px] font-semibold text-slate-500"><span>{PROVIDER_NAME[provider] ?? provider}</span><span className="rounded bg-amber-50 px-1.5 py-px text-[9px] font-bold text-amber-700">{tx("spends money")}</span></div>
+                        <div className="grid gap-2 sm:grid-cols-2" role="group" aria-label={PROVIDER_NAME[provider] ?? provider}>
+                          {list.map((m) => <ModelCard key={m.label} m={m} on={form.models.includes(m.label)} onToggle={() => toggle("models", m.label)} />)}
+                        </div>
+                      </div>
+                    ))}
+                    {scripted.length > 0 && (
+                      <div>
+                        <div className="mb-1.5 flex items-center gap-2 text-[11px] font-semibold text-slate-500"><span>{tx("Scripted stand-ins")}</span><span className="rounded bg-sky-50 px-1.5 py-px text-[9px] font-bold text-sky-700">{tx("free")}</span></div>
+                        <div className="grid gap-2 sm:grid-cols-2" role="group" aria-label={tx("Scripted stand-ins")}>
+                          {scripted.map((m) => <ModelCard key={m.label} m={m} on={form.models.includes(m.label)} onToggle={() => toggle("models", m.label)} />)}
+                        </div>
+                      </div>
+                    )}
+                    {form.models.some((m) => m.startsWith("mock/")) && form.models.some((m) => !m.startsWith("mock/")) && <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">{tx("A scripted model next to a real one is not a quality comparison: scripted models are hard-coded stand-ins, so their results say nothing about a real model.")}</p>}
+                  </>
+                )}
+              </>
+            )}
+
+            {step === "questions" && (
+              <>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className={labelCls} htmlFor="bm-dataset">{tx("Test set")}</label>
+                    <select id="bm-dataset" className={inputCls} value={form.dataset} onChange={(e) => set("dataset", e.target.value)}>
+                      {datasets.length === 0 && <option value="">{tx("loading…")}</option>}
+                      {datasets.map((d) => <option key={d.slug} value={d.slug}>{d.name} ({d.turn_mode.replace("_", " ")})</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className={labelCls} htmlFor="bm-version">{tx("Published version")}</label>
+                    <select id="bm-version" className={inputCls} value={form.version} onChange={(e) => set("version", e.target.value)}>
+                      {(detail?.versions ?? []).filter((v) => v.state === "published").map((v) => <option key={v.version} value={v.version}>{v.version} · {v.case_count} {tx("cases")}{v.provisional ? ` · ${tx("provisional")}` : ""}</option>)}
+                    </select>
+                    <p className="mt-1 text-[10px] text-slate-400">{tx("Only a published version is frozen, so only it can be run.")}</p>
                   </div>
                 </div>
-              )}
-              {form.models.some((m) => m.startsWith("mock/")) && form.models.some((m) => !m.startsWith("mock/")) && <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">{tx("A scripted model next to a real one is not a quality comparison: scripted models prove the machinery, nothing about a real model.")}</p>}
-            </>
-          )}
-        </Section>
+                <details className="rounded-lg border border-slate-200 dark:border-slate-700" open={form.stages.length > 0}>
+                  <summary className="cursor-pointer select-none px-3 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-200">{tx("Run only some stages")} <span className="font-normal text-slate-400">({form.stages.length === 0 ? tx("all stages are run") : `${form.stages.length} ${tx("chosen")}`})</span></summary>
+                  <div className="space-y-2 border-t border-slate-100 px-3 py-3 dark:border-slate-800">
+                    <div className="flex flex-wrap gap-1.5">
+                      {(detail?.facets.category ?? []).map((c) => <button key={c} type="button" aria-pressed={form.stages.includes(c)} onClick={() => toggle("stages", c)} className={chip(form.stages.includes(c))}>{c}</button>)}
+                    </div>
+                    <p className="text-[10px] text-slate-400">{tx("Leave all unselected to run every stage. A single stage is a cheap way to try a setup.")} {form.stages.length > 0 && <button type="button" onClick={() => set("stages", [])} className="font-semibold text-blue-600 hover:underline">{tx("Use all stages")}</button>}</p>
+                  </div>
+                </details>
+              </>
+            )}
 
-        <Section n={2} title={tx("What to ask")} testId="sec-scope" open={open.scope} onToggle={() => flip("scope")}
-          summary={form.dataset ? `${form.dataset} ${form.version} · ${form.stages.length === 0 ? tx("all workflow stages") : `${form.stages.length} ${tx("stages")}`}${cases !== null ? ` · ${cases} ${tx("cases")}` : ""}` : tx("choose a dataset")}>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div>
-              <label className={labelCls} htmlFor="bm-dataset">{tx("Evaluation dataset")}</label>
-              <select id="bm-dataset" className={inputCls} value={form.dataset} onChange={(e) => set("dataset", e.target.value)}>
-                {datasets.length === 0 && <option value="">{tx("loading…")}</option>}
-                {datasets.map((d) => <option key={d.slug} value={d.slug}>{d.name} ({d.turn_mode.replace("_", " ")})</option>)}
-              </select>
-            </div>
-            <div>
-              <label className={labelCls} htmlFor="bm-version">{tx("Published version")}</label>
-              <select id="bm-version" className={inputCls} value={form.version} onChange={(e) => set("version", e.target.value)}>
-                {(detail?.versions ?? []).filter((v) => v.state === "published").map((v) => <option key={v.version} value={v.version}>{v.version} · {v.case_count} {tx("cases")}{v.provisional ? ` · ${tx("provisional")}` : ""}</option>)}
-              </select>
-              <p className="mt-1 text-[10px] text-slate-400">{tx("Only a published version is immutable, so only it can be run.")}</p>
-            </div>
-          </div>
-          <div>
-            <div className="mb-1 flex items-center justify-between"><span className={labelCls}>{tx("Workflow stages")} <span className="font-normal normal-case text-slate-400">({form.stages.length === 0 ? tx("all") : form.stages.length})</span></span>
-              {form.stages.length > 0 && <button type="button" onClick={() => set("stages", [])} className="text-[11px] text-blue-600 hover:underline">{tx("Use all stages")}</button>}</div>
-            <div className="flex flex-wrap gap-1.5">
-              {(detail?.facets.category ?? []).map((c) => <button key={c} type="button" aria-pressed={form.stages.includes(c)} onClick={() => toggle("stages", c)} className={chip(form.stages.includes(c))}>{c}</button>)}
-            </div>
-            <p className="mt-1 text-[10px] text-slate-400">{tx("Leave all unselected to run every stage. Choose some to run only those.")}</p>
-          </div>
-        </Section>
-
-        <Section n={3} title={tx("How to run it")} testId="sec-method" open={open.method} onToggle={() => flip("method")}
-          summary={`${form.mode === "agent" ? tx("through the real agent") : tx("bare model, no agent")} · ${form.repetitions} ${tx("repetition(s)")}`}>
-          <div>
-            <span className={labelCls}>{tx("Benchmark mode")}</span>
-            <div className="flex gap-1 rounded-lg bg-slate-100 p-1 dark:bg-slate-800" role="radiogroup" aria-label={tx("Benchmark mode")}>
-              {(["agent", "direct"] as const).map((m) => <button key={m} type="button" role="radio" aria-checked={form.mode === m} onClick={() => set("mode", m)} className={seg(form.mode === m)}>{m === "agent" ? tx("Agent") : tx("Direct")}</button>)}
-            </div>
-            <p className="mt-1.5 text-[11px] text-slate-500">{form.mode === "agent" ? tx("The real Individual Insurance agent answers with its tools and skills, using each model.") : tx("The bare model is asked the same question with the same reference information, with no agent and no tools.")}</p>
-            {form.mode === "agent" && (
-              <div className="mt-2" data-testid="skills-choice">
-                <span className={labelCls}>{tx("Agent skills")}</span>
-                <div className="inline-flex rounded-lg border border-slate-200 p-0.5 dark:border-slate-700" role="radiogroup" aria-label={tx("Agent skills")}>
-                  {([["default", "As configured"], ["on", "On"], ["off", "Off"]] as const).map(([v, l]) => <button key={v} type="button" role="radio" aria-checked={(form.skills ?? "default") === v} onClick={() => set("skills", v)} className={seg((form.skills ?? "default") === v)}>{tx(l)}</button>)}
+            {step === "method" && (
+              <>
+                <div>
+                  <span className={labelCls}>{tx("How are the models asked?")}</span>
+                  <div className="grid gap-3 sm:grid-cols-2" role="radiogroup" aria-label={tx("Benchmark mode")}>
+                    {([["agent", "Through the real agent", "The Individual Insurance agent answers with its tools and skills, using each model. This is what the product does. Recommended."], ["direct", "As a bare model", "The model is asked the same question with the same reference information, with no agent and no tools. Cheaper, and tests the model alone."]] as const).map(([m, title, text]) => (
+                      <button key={m} type="button" role="radio" aria-checked={form.mode === m} onClick={() => set("mode", m)} className={`rounded-xl border p-4 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 ${form.mode === m ? "border-blue-500 bg-blue-50 dark:bg-blue-950/40" : "border-slate-200 bg-white hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900"}`}>
+                        <span className="flex items-center gap-2"><span className={`inline-flex h-4 w-4 items-center justify-center rounded-full border text-[9px] ${form.mode === m ? "border-blue-600 bg-blue-600 text-white" : "border-slate-300 text-transparent"}`} aria-hidden>●</span><b className="text-sm font-extrabold text-slate-900 dark:text-slate-50">{tx(title)}</b></span>
+                        <span className="mt-1 block text-[11px] leading-relaxed text-slate-500">{tx(text)}</span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <p className="mt-1 text-[10px] text-slate-400">{tx("Skills are the agent's progressive instructions. Run once with them on and once off to see what they add.")}</p>
-              </div>
+                <div>
+                  <span className={labelCls}>{tx("How many times is each question asked?")}</span>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {REPETITION_CHOICES.map((n) => <button key={n} type="button" aria-pressed={form.repetitions === n && custom === ""} onClick={() => { setCustom(""); set("repetitions", n); }} className={chip(form.repetitions === n && custom === "")}>{n}{n === 3 ? ` · ${tx("recommended")}` : ""}</button>)}
+                    <input aria-label={tx("custom repetitions, 1 to 100")} className={`${inputCls} !w-28`} placeholder={tx("custom")} inputMode="numeric" value={custom}
+                      onChange={(e) => { setCustom(e.target.value); const n = Number(e.target.value); if (e.target.value !== "" && Number.isInteger(n)) set("repetitions", n); }} />
+                  </div>
+                  <p className="mt-1.5 text-[11px] text-slate-500">{tx("More repetitions separate a model that is reliably right from one that was lucky. Cost grows in proportion: one repetition is the cheapest way to try a setup.")}</p>
+                </div>
+                {form.mode === "agent" && (
+                  <details className="rounded-lg border border-slate-200 dark:border-slate-700">
+                    <summary className="cursor-pointer select-none px-3 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-200">{tx("Advanced: agent skills")} <span className="font-normal text-slate-400">({(form.skills ?? "default") === "default" ? tx("as configured") : tx(form.skills === "on" ? "on" : "off")})</span></summary>
+                    <div className="border-t border-slate-100 px-3 py-3 dark:border-slate-800" data-testid="skills-choice">
+                      <div className="inline-flex rounded-lg border border-slate-200 p-0.5 dark:border-slate-700" role="radiogroup" aria-label={tx("Agent skills")}>
+                        {([["default", "As configured"], ["on", "On"], ["off", "Off"]] as const).map(([v, l]) => <button key={v} type="button" role="radio" aria-checked={(form.skills ?? "default") === v} onClick={() => set("skills", v)} className={seg((form.skills ?? "default") === v)}>{tx(l)}</button>)}
+                      </div>
+                      <p className="mt-1.5 text-[10px] text-slate-400">{tx("Skills are the agent's progressive instructions. Run once with them on and once off to see what they add.")}</p>
+                    </div>
+                  </details>
+                )}
+              </>
+            )}
+
+            {step === "judge" && (
+              <>
+                <div>
+                  <label className={labelCls} htmlFor="bm-judge">{tx("Judge model")}</label>
+                  <select id="bm-judge" className={inputCls} value={form.judge} onChange={(e) => set("judge", e.target.value)}>
+                    <option value="">{tx("No judge (rule checks only)")}</option>
+                    {judges.map((j) => <option key={j.label} value={j.label}>{j.label}{j.synthetic ? ` (${tx("scripted")})` : ""}</option>)}
+                  </select>
+                  {form.judge && form.models.includes(form.judge) && !form.allowSameJudge && <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800" role="alert">{tx("This judge is also one of the models being compared. Choose another judge: a model tends to favour its own answers.")}</p>}
+                  {!form.judge && <p className="mt-1.5 text-[11px] text-slate-500">{tx("Without a judge the results rest on rule-based checks only: which tools were called, what changed in the data, and exact text.")}</p>}
+                </div>
+                <details className="rounded-lg border border-slate-200 dark:border-slate-700">
+                  <summary className="cursor-pointer select-none px-3 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-200">{tx("Advanced: what to score")} <span className="font-normal text-slate-400">({form.metrics.length === 0 ? tx("all the cases ask for") : `${form.metrics.length} ${tx("chosen")}`})</span></summary>
+                  <div className="space-y-3 border-t border-slate-100 px-3 py-3 dark:border-slate-800">
+                    <div className="flex flex-wrap gap-1.5">
+                      {METRICS.map((m) => <button key={m} type="button" disabled={!form.judge} title={tx(METRIC_HELP[m])} aria-pressed={form.metrics.includes(m)} onClick={() => toggle("metrics", m)} className={`${chip(form.metrics.includes(m))} disabled:opacity-40`}>{m.replace("_", " ")}</button>)}
+                    </div>
+                    {!form.judge && <p className="text-[10px] text-slate-400">{tx("Choose a judge to pick which quality metrics are scored.")}</p>}
+                    <label className="flex items-start gap-2 text-[11px] text-slate-600 dark:text-slate-300"><input type="checkbox" className="mt-0.5" checked={form.allowSameJudge} onChange={(e) => set("allowSameJudge", e.target.checked)} />{tx("Allow the judge to be one of the compared models (weaker evidence)")}</label>
+                  </div>
+                </details>
+              </>
+            )}
+
+            {step === "review" && (
+              <>
+                <dl className="divide-y divide-slate-100 rounded-lg border border-slate-200 dark:divide-slate-800 dark:border-slate-700" data-testid="review-list">
+                  {([["models", "Models", steps[0].summary], ["questions", "Questions", `${steps[1].summary}${cases !== null ? ` · ${cases} ${tx("cases")}` : ""}`], ["method", "Method", steps[2].summary], ["judge", "Judge", `${steps[3].summary}${form.metrics.length ? ` · ${form.metrics.length} ${tx("metrics")}` : ""}`]] as const).map(([id, label, value]) => (
+                    <div key={id} className="flex items-center gap-3 px-3 py-2.5">
+                      <dt className="w-24 shrink-0 text-[11px] font-bold uppercase tracking-wide text-slate-400">{tx(label)}</dt>
+                      <dd className="min-w-0 flex-1 truncate text-xs font-semibold text-slate-800 dark:text-slate-100" title={value}>{value}</dd>
+                      <button type="button" onClick={() => goTo(id)} className="shrink-0 text-[11px] font-semibold text-blue-700 hover:underline dark:text-sky-300">{tx("Change")}</button>
+                    </div>
+                  ))}
+                </dl>
+                <div className="max-w-xs">
+                  <label className={labelCls} htmlFor="bm-budget">{tx("Spending limit for this run (USD)")}</label>
+                  <input id="bm-budget" className={inputCls} inputMode="decimal" value={form.budget} onChange={(e) => set("budget", e.target.value)} />
+                  <p className="mt-1 text-[10px] text-slate-400">{tx("The run stops when this is reached; what is left is reported as blocked, not failed.")}</p>
+                </div>
+                <details className="rounded-lg border border-slate-200 dark:border-slate-700">
+                  <summary className="cursor-pointer select-none px-3 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-200">{tx("Advanced: limits and quality gate")} <span className="font-normal text-slate-400">({form.maxLatencyMs || form.maxTokens || form.maxCostUsd || form.gate || form.stopOnCritical ? `${tx("set")}${form.gate ? ` · ${tx("gate")} ${form.gateMinPassPct || "90"}%` : ""}` : tx("none")})</span></summary>
+                  <div className="space-y-4 border-t border-slate-100 px-3 py-3 dark:border-slate-800">
+                    {form.mode === "direct" && <div className="max-w-[10rem]"><label className={labelCls} htmlFor="bm-temp">{tx("Temperature")}</label><input id="bm-temp" className={inputCls} inputMode="decimal" value={form.temperature} onChange={(e) => set("temperature", e.target.value)} /></div>}
+                    <div data-testid="limits-gate" className="grid gap-3 sm:grid-cols-3">
+                      <div><label className={labelCls} htmlFor="bm-maxlat">{tx("Slowest allowed (ms)")}</label><input id="bm-maxlat" className={inputCls} inputMode="numeric" placeholder={tx("no limit")} value={form.maxLatencyMs ?? ""} onChange={(e) => set("maxLatencyMs", e.target.value)} /></div>
+                      <div><label className={labelCls} htmlFor="bm-maxtok">{tx("Most tokens per execution")}</label><input id="bm-maxtok" className={inputCls} inputMode="numeric" placeholder={tx("no limit")} value={form.maxTokens ?? ""} onChange={(e) => set("maxTokens", e.target.value)} /></div>
+                      <div><label className={labelCls} htmlFor="bm-maxcost">{tx("Most cost per execution (USD)")}</label><input id="bm-maxcost" className={inputCls} inputMode="decimal" placeholder={tx("no limit")} value={form.maxCostUsd ?? ""} onChange={(e) => set("maxCostUsd", e.target.value)} /></div>
+                      <p className="text-[10px] text-slate-400 sm:col-span-3">{tx("An execution over a limit fails the performance layer (L6); it is not stopped midway.")}</p>
+                      <div className="sm:col-span-3">
+                        <label className="flex items-start gap-2 text-[11px] text-slate-600 dark:text-slate-300"><input type="checkbox" className="mt-0.5" checked={!!form.gate} onChange={(e) => set("gate", e.target.checked)} />{tx("Apply a quality gate: each model must reach a minimum pass rate (critical cases are held to a stricter standard)")}</label>
+                        {form.gate && <div className="mt-2 max-w-[10rem]"><label className={labelCls} htmlFor="bm-gate">{tx("Minimum pass rate (%)")}</label><input id="bm-gate" className={inputCls} inputMode="decimal" value={form.gateMinPassPct ?? ""} onChange={(e) => set("gateMinPassPct", e.target.value)} /></div>}
+                      </div>
+                    </div>
+                    <label className="flex items-start gap-2 text-[11px] text-slate-600 dark:text-slate-300"><input type="checkbox" className="mt-0.5" checked={form.stopOnCritical} onChange={(e) => set("stopOnCritical", e.target.checked)} />{tx("Stop a model's run at its first critical failure")}</label>
+                  </div>
+                </details>
+                <div className="rounded-lg bg-slate-50 px-4 py-3 dark:bg-slate-800/50">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="mr-auto min-w-0 text-xs text-slate-600 dark:text-slate-300"><b className="block text-sm font-extrabold text-slate-900 dark:text-slate-50">{canStart ? (usesMoney ? tx("Ready: this run spends real money") : tx("Ready: a free simulation")) : tx("Not ready yet")}</b>{!canStart && why ? <span data-testid="review-why">{why}</span> : usesMoney && cost && !cost.error ? <span>{tx("Estimated at most")} {usd(cost.usd.total)}</span> : null}</div>
+                    <button type="button" onClick={press} disabled={!canStart} data-testid="start-run-review" className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500">{startLabel}</button>
+                  </div>
+                </div>
+              </>
             )}
           </div>
-          <div>
-            <span className={labelCls}>{tx("Repetitions")}</span>
-            <div className="flex flex-wrap items-center gap-1.5">
-              {REPETITION_CHOICES.map((n) => <button key={n} type="button" aria-pressed={form.repetitions === n && custom === ""} onClick={() => { setCustom(""); set("repetitions", n); }} className={chip(form.repetitions === n && custom === "")}>{n}</button>)}
-              <input aria-label={tx("custom repetitions, 1 to 100")} className={`${inputCls} !w-28`} placeholder={tx("custom")} inputMode="numeric" value={custom}
-                onChange={(e) => { setCustom(e.target.value); const n = Number(e.target.value); if (e.target.value !== "" && Number.isInteger(n)) set("repetitions", n); }} />
-            </div>
-            <p className="mt-1 text-[11px] text-slate-500">{tx("More repetitions separate a model that is reliably right from one that was lucky. Cost grows in proportion.")}</p>
-          </div>
-        </Section>
 
-        <Section n={4} title={tx("Judging and limits")} testId="sec-judge" open={open.judge} onToggle={() => flip("judge")}
-          summary={<>{judgeSummary} · {tx("budget")} {form.budget.trim() === "" ? tx("none") : `$${form.budget}`}{form.stopOnCritical ? ` · ${tx("stops at a critical failure")}` : ""}{form.gate ? ` · ${tx("gate")} ${form.gateMinPassPct || "90"}%` : ""}{form.skills === "on" || form.skills === "off" ? ` · ${tx("skills")} ${form.skills}` : ""} <span className="text-slate-400">({tx("optional")})</span></>}>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div>
-              <label className={labelCls} htmlFor="bm-judge">{tx("Judge model")}</label>
-              <select id="bm-judge" className={inputCls} value={form.judge} onChange={(e) => set("judge", e.target.value)}>
-                <option value="">{tx("No judge (rule checks only)")}</option>
-                {judges.map((j) => <option key={j.label} value={j.label}>{j.label}{j.synthetic ? ` (${tx("scripted")})` : ""}</option>)}
-              </select>
-              <label className="mt-2 flex items-start gap-2 text-[11px] text-slate-600 dark:text-slate-300"><input type="checkbox" className="mt-0.5" checked={form.allowSameJudge} onChange={(e) => set("allowSameJudge", e.target.checked)} />{tx("Allow the judge to be one of the compared models (weaker evidence)")}</label>
-            </div>
-            <div>
-              <label className={labelCls} htmlFor="bm-budget">{tx("Budget for this run (USD)")}</label>
-              <input id="bm-budget" className={inputCls} inputMode="decimal" value={form.budget} onChange={(e) => set("budget", e.target.value)} />
-              <p className="mt-1 text-[10px] text-slate-400">{tx("The run stops when this is reached; what is left is reported as blocked, not failed.")}</p>
-              {form.mode === "direct" && <div className="mt-2"><label className={labelCls} htmlFor="bm-temp">{tx("Temperature")}</label><input id="bm-temp" className={inputCls} inputMode="decimal" value={form.temperature} onChange={(e) => set("temperature", e.target.value)} /></div>}
-              <label className="mt-2 flex items-start gap-2 text-[11px] text-slate-600 dark:text-slate-300"><input type="checkbox" className="mt-0.5" checked={form.stopOnCritical} onChange={(e) => set("stopOnCritical", e.target.checked)} />{tx("Stop a model's run at its first critical failure")}</label>
-            </div>
-          </div>
-          <div>
-            <span className={labelCls}>{tx("Quality metrics")} <span className="font-normal normal-case text-slate-400">({form.metrics.length === 0 ? tx("all the cases ask for") : `${form.metrics.length} ${tx("chosen")}`})</span></span>
-            <div className="flex flex-wrap gap-1.5">
-              {METRICS.map((m) => <button key={m} type="button" disabled={!form.judge} title={tx(METRIC_HELP[m])} aria-pressed={form.metrics.includes(m)} onClick={() => toggle("metrics", m)} className={`${chip(form.metrics.includes(m))} disabled:opacity-40`}>{m.replace("_", " ")}</button>)}
-            </div>
-            {!form.judge && <p className="mt-1 text-[10px] text-slate-400">{tx("Choose a judge to pick which quality metrics are scored.")}</p>}
-          </div>
-          <div data-testid="limits-gate" className="grid gap-3 sm:grid-cols-3">
-            <div><label className={labelCls} htmlFor="bm-maxlat">{tx("Slowest allowed (ms)")}</label><input id="bm-maxlat" className={inputCls} inputMode="numeric" placeholder={tx("no limit")} value={form.maxLatencyMs ?? ""} onChange={(e) => set("maxLatencyMs", e.target.value)} /></div>
-            <div><label className={labelCls} htmlFor="bm-maxtok">{tx("Most tokens per execution")}</label><input id="bm-maxtok" className={inputCls} inputMode="numeric" placeholder={tx("no limit")} value={form.maxTokens ?? ""} onChange={(e) => set("maxTokens", e.target.value)} /></div>
-            <div><label className={labelCls} htmlFor="bm-maxcost">{tx("Most cost per execution (USD)")}</label><input id="bm-maxcost" className={inputCls} inputMode="decimal" placeholder={tx("no limit")} value={form.maxCostUsd ?? ""} onChange={(e) => set("maxCostUsd", e.target.value)} /></div>
-            <p className="text-[10px] text-slate-400 sm:col-span-3">{tx("An execution over a limit fails the performance layer (L6); it is not stopped midway.")}</p>
-            <div className="sm:col-span-3">
-              <label className="flex items-start gap-2 text-[11px] text-slate-600 dark:text-slate-300"><input type="checkbox" className="mt-0.5" checked={!!form.gate} onChange={(e) => set("gate", e.target.checked)} />{tx("Apply a quality gate: each model must reach a minimum pass rate (critical cases are held to a stricter standard)")}</label>
-              {form.gate && <div className="mt-2 max-w-[10rem]"><label className={labelCls} htmlFor="bm-gate">{tx("Minimum pass rate (%)")}</label><input id="bm-gate" className={inputCls} inputMode="decimal" value={form.gateMinPassPct ?? ""} onChange={(e) => set("gateMinPassPct", e.target.value)} /></div>}
-            </div>
-          </div>
-        </Section>
+          <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-5 py-3 dark:border-slate-800">
+            {step !== "models" ? <button type="button" onClick={() => goTo(prevOf(step))} className={ghost} data-testid="step-back">← {tx("Back")}</button> : <span />}
+            {step !== "review" && (
+              <div className="flex items-center gap-3">
+                {!canAdvance(step, form) && <span className="text-[11px] text-slate-500" data-testid="step-blocked">{step === "models" ? tx("Pick at least two models to continue.") : tx("Choose a published test set to continue.")}</span>}
+                <button type="button" onClick={() => goTo(nextOf(step))} disabled={!canAdvance(step, form)} data-testid="step-next" className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-bold text-white hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500">{tx("Next")}: {tx(COPY[nextOf(step)].label)} →</button>
+              </div>
+            )}
+          </footer>
+        </section>
 
         {aside}
       </div>

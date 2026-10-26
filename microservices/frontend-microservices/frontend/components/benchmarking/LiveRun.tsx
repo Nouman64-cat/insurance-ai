@@ -3,6 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { tx } from "@/lib/i18n/tx";
+import RunHeader from "./RunHeader";
+import RunStepper from "./RunStepper";
+import { visibleEvents } from "@/lib/runView";
 import { cancelJob, getJob, modelColor, ms, pct, rerunJob, runsOfJob, streamJob, usd, type Job, type JobEvent } from "@/lib/evalBenchmarks";
 
 const TERMINAL = ["succeeded", "failed", "cancelled", "lost"];
@@ -13,7 +16,7 @@ const btnDanger = "px-3 py-2 text-xs font-semibold text-red-600 bg-white border 
 interface ModelProgress { model: string; done: number; planned: number | null; passed: number; failed: number; other: number; critical: number; latency: number[]; spent: number; inTok: number; outTok: number }
 interface Answer { key: string; model: string; case_id: string; status: string; reply: string | null; latency: number | null; stage: string | null; at: string }
 
-export default function LiveRun({ job: initial, onJob, onOpenResults }: { job: Job; onJob: (job: Job) => void; onOpenResults: (benchmarkId: string) => void }) {
+export default function LiveRun({ job: initial, onJob, onOpenResults, onOpenMap }: { job: Job; onJob: (job: Job) => void; onOpenResults: (benchmarkId: string) => void; onOpenMap?: () => void }) {
   const [job, setJob] = useState<Job>(initial);
   const [events, setEvents] = useState<JobEvent[]>([]);
   const [progress, setProgress] = useState<Record<string, ModelProgress>>({});
@@ -22,6 +25,9 @@ export default function LiveRun({ job: initial, onJob, onOpenResults }: { job: J
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [benchmarkId, setBenchmarkId] = useState<string | null>(null);
+  const [resultsChecked, setResultsChecked] = useState(false);
+  const [recheck, setRecheck] = useState(0);
+  const [showDetail, setShowDetail] = useState(false);
   const [streamNote, setStreamNote] = useState<string | null>(null);
   const seen = useRef<Set<number>>(new Set());
   const running = !TERMINAL.includes(job.state);
@@ -60,7 +66,7 @@ export default function LiveRun({ job: initial, onJob, onOpenResults }: { job: J
   useEffect(() => {
     const ctl = new AbortController();
     seen.current = new Set();
-    setEvents([]); setProgress({}); setAnswers([]); setBenchmarkId(null); setJob(initial);
+    setEvents([]); setProgress({}); setAnswers([]); setBenchmarkId(null); setResultsChecked(false); setJob(initial);
     streamJob(initial.id, { onEvent: absorb, onEnd: () => undefined, onError: (m) => setStreamNote(m) }, ctl.signal).catch(() => undefined);
     return () => ctl.abort();
   }, [initial.id, absorb]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -74,9 +80,14 @@ export default function LiveRun({ job: initial, onJob, onOpenResults }: { job: J
         setJob(fresh);
         onJob(fresh);
         if (TERMINAL.includes(fresh.state)) {
-          const runs = await runsOfJob(initial.id);
-          const group = runs.find((r) => r.group_id)?.group_id ?? null;
-          if (!stop) setBenchmarkId(group);
+          // look for the stored results; a finished job gets a few tries (the platform may still be committing them), a failed or cancelled one a single look
+          for (let tries = 0; tries < (fresh.state === "succeeded" ? 6 : 1) && !stop; tries++) {
+            const runs = await runsOfJob(initial.id);
+            const group = runs.find((r) => r.group_id)?.group_id ?? null;
+            if (group) { setBenchmarkId(group); break; }
+            if (tries < 5 && fresh.state === "succeeded") await new Promise((r) => setTimeout(r, 2000));
+          }
+          if (!stop) setResultsChecked(true);
           return;
         }
       } catch (e) {
@@ -86,7 +97,7 @@ export default function LiveRun({ job: initial, onJob, onOpenResults }: { job: J
     };
     tick();
     return () => { stop = true; };
-  }, [initial.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [initial.id, recheck]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const models = useMemo(() => Object.values(progress), [progress]);
   const allLabels = useMemo(() => (job.config.models as string[] | undefined) ?? [], [job.config.models]);
@@ -119,30 +130,23 @@ export default function LiveRun({ job: initial, onJob, onOpenResults }: { job: J
     }
   }
 
-  const stateStyle = job.state === "succeeded" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : job.state === "running" ? "bg-blue-50 text-blue-700 border-blue-200"
-    : job.state === "queued" ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-red-50 text-red-600 border-red-200";
+  const mode = job.config.kind === "benchmark_direct" ? "direct" : "agent";
+  const lines = visibleEvents(events, showDetail);
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
-        <span className={`text-[11px] font-bold px-2 py-0.5 rounded border ${stateStyle}`} data-testid="job-state">{job.state}{job.cancel_requested && running ? ` · ${tx("cancelling")}` : ""}</span>
-        <div className="min-w-0 mr-auto text-xs text-slate-600">
-          <b>{String(job.config.dataset)}</b> {String(job.config.version)} · {job.config.kind === "benchmark_direct" ? tx("direct") : tx("agent")} · {allLabels.join(" vs ")} · ×{String(job.config.repeat)}
-          <span className="block text-[10px] text-slate-400">{tx("job")} {job.id}</span>
-        </div>
-        <div className="text-xs text-slate-600 text-right">
-          <div>{tx("spent")} <b data-testid="spent">{usd(spent)}</b>{upper !== null && <> {tx("of an estimated")} {usd(upper)}</>}{budget !== null && <> · {tx("budget")} ${budget}</>}</div>
-        </div>
-        {running && <button type="button" className={btnDanger} disabled={busy || job.cancel_requested} onClick={() => setConfirmCancel(true)}>{job.cancel_requested ? tx("Cancelling…") : tx("Cancel")}</button>}
-        {!running && <button type="button" className={btnGhost} disabled={busy} onClick={doRerun}>{tx("Rerun")}</button>}
-        {!running && benchmarkId && <button type="button" className={btnPrimary} onClick={() => onOpenResults(benchmarkId)}>{tx("Open results")}</button>}
-      </div>
+    <div className="space-y-5" data-testid="live-run">
+      <RunHeader state={job.state} cancelRequested={job.cancel_requested} dataset={String(job.config.dataset)} version={String(job.config.version)} mode={mode} repeat={String(job.config.repeat)} models={allLabels} jobId={job.id}
+        spent={spent} estimate={upper} budget={budget} running={running} busy={busy} canOpenResults={!running && !!benchmarkId} onCancel={() => setConfirmCancel(true)} onRerun={doRerun}
+        onOpenResults={() => benchmarkId && onOpenResults(benchmarkId)} onOpenMap={onOpenMap} />
 
-      {error && <div className="text-xs rounded-lg px-3 py-2 border bg-red-50 border-red-200 text-red-600">{error}</div>}
-      {job.error && <div className="text-xs rounded-lg px-3 py-2 border bg-red-50 border-red-200 text-red-600">{job.error}</div>}
-      {streamNote && running && <div className="text-[11px] text-amber-600">{tx("Live stream interrupted, retrying:")} {streamNote}</div>}
+      <RunStepper state={job.state} events={events} benchmarkId={benchmarkId} resultsChecked={resultsChecked} error={job.error ?? null} cancelRequested={job.cancel_requested}
+        onCheckAgain={() => { setResultsChecked(false); setRecheck((n) => n + 1); }} />
 
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+      {error && <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700" role="alert">{error}</div>}
+      {job.error && <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 break-words" role="alert">{job.error}</div>}
+      {streamNote && running && <div className="text-[11px] text-amber-700">{tx("Live stream interrupted, retrying:")} {streamNote}</div>}
+
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3" data-testid="model-cards">
         {allLabels.map((label) => {
           const m = progress[label];
           const color = modelColor(label, allLabels);
@@ -152,47 +156,59 @@ export default function LiveRun({ job: initial, onJob, onOpenResults }: { job: J
           const sorted = [...(m?.latency ?? [])].sort((a, b) => a - b);
           const q = (p: number) => (sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length))] : null);
           return (
-            <section key={label} className="rounded-xl border border-slate-200 bg-white p-4" aria-label={label}>
-              <div className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-sm" style={{ background: color }} /><h3 className="text-sm font-bold text-slate-900">{label}</h3></div>
-              <div className="mt-2 h-2 rounded bg-slate-100 overflow-hidden"><div className="h-full" style={{ width: `${total ? Math.min(100, (done / total) * 100) : done > 0 ? 8 : 0}%`, background: color }} /></div>
-              <p className="mt-1 text-[11px] text-slate-500">{done}{total ? ` / ${total}` : ""} {tx("executions")}{!m && running ? ` · ${tx("waiting")}` : ""}</p>
-              <dl className="mt-2 grid grid-cols-3 gap-2 text-[11px]">
-                <div><dt className="text-slate-400">{tx("accuracy")}</dt><dd className="font-bold text-slate-800">{ran ? pct((m?.passed ?? 0) / ran) : "—"}</dd></div>
-                <div><dt className="text-slate-400">p50 / p95</dt><dd className="font-bold text-slate-800">{ms(q(50))} / {ms(q(95))}</dd></div>
-                <div><dt className="text-slate-400">{tx("cost")}</dt><dd className="font-bold text-slate-800">{usd(m?.spent ?? 0)}</dd></div>
-                <div><dt className="text-slate-400">{tx("failed")}</dt><dd className="font-bold text-slate-800">{m?.failed ?? 0}</dd></div>
-                <div><dt className="text-slate-400">{tx("critical")}</dt><dd className={`font-bold ${m?.critical ? "text-red-600" : "text-slate-800"}`}>{m?.critical ?? 0}</dd></div>
-                <div><dt className="text-slate-400">{tx("tokens")}</dt><dd className="font-bold text-slate-800">{Math.round(((m?.inTok ?? 0) + (m?.outTok ?? 0)) / 1000)}k</dd></div>
+            <section key={label} className="min-w-0 rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900" aria-label={label}>
+              <div className="flex items-center gap-2"><span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: color }} aria-hidden /><h3 className="min-w-0 truncate text-sm font-extrabold text-slate-900 dark:text-slate-50" title={label}>{label}</h3></div>
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800" role="progressbar" aria-label={`${label} ${tx("progress")}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={total ? Math.round(Math.min(100, (done / total) * 100)) : 0}><div className="h-full rounded-full transition-all" style={{ width: `${total ? Math.min(100, (done / total) * 100) : done > 0 ? 8 : 0}%`, background: color }} /></div>
+              <p className="mt-1.5 text-[11px] font-semibold text-slate-500">{done}{total ? ` / ${total}` : ""} {tx("executions")}{!m && running ? ` · ${tx("waiting")}` : ""}</p>
+              <dl className="mt-3 grid grid-cols-3 gap-x-3 gap-y-2.5 text-[11px]">
+                {([
+                  [tx("accuracy"), ran ? pct((m?.passed ?? 0) / ran) : "—", ""], [`p50 / p95`, `${ms(q(50))} / ${ms(q(95))}`, ""], [tx("cost"), usd(m?.spent ?? 0), ""],
+                  [tx("failed"), String(m?.failed ?? 0), ""], [tx("critical"), String(m?.critical ?? 0), m?.critical ? "text-red-600" : ""], [tx("tokens"), `${Math.round(((m?.inTok ?? 0) + (m?.outTok ?? 0)) / 1000)}k`, ""],
+                ] as const).map(([k, v, c]) => <div key={k} className="min-w-0"><dt className="text-slate-400">{k}</dt><dd className={`truncate font-extrabold ${c || "text-slate-800 dark:text-slate-100"}`}>{v}</dd></div>)}
               </dl>
             </section>
           );
         })}
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        <section className="rounded-xl border border-slate-200 bg-white p-4">
-          <h3 className="text-sm font-bold text-slate-900">{tx("Model responses as they arrive")}</h3>
-          {answers.length === 0 ? <p className="mt-3 text-xs text-slate-400">{tx("Nothing yet.")}</p> : (
-            <ul className="mt-2 space-y-2 max-h-[420px] overflow-y-auto" data-testid="answers">
+      <div className="grid gap-5 lg:grid-cols-2">
+        <section className="min-w-0 rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900" aria-label={tx("Model responses as they arrive")}>
+          <header className="flex items-center justify-between gap-2 border-b border-slate-100 px-4 py-3 dark:border-slate-800">
+            <h3 className="text-sm font-extrabold text-slate-900 dark:text-slate-50">{tx("Model responses as they arrive")}</h3>
+            <span className="text-[11px] text-slate-400">{answers.length > 0 ? `${tx("latest")} ${answers.length}` : ""}</span>
+          </header>
+          {answers.length === 0 ? <p className="px-4 py-8 text-center text-xs text-slate-400">{running ? tx("Waiting for the first answer…") : tx("Nothing yet.")}</p> : (
+            <ul className="max-h-[32rem] space-y-2 overflow-y-auto p-3" data-testid="answers">
               {answers.map((a) => (
-                <li key={a.key} className="text-xs border border-slate-100 rounded-lg p-2">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="h-2 w-2 rounded-sm" style={{ background: modelColor(a.model, allLabels) }} />
-                    <b className="text-slate-800">{a.case_id}</b><span className="text-slate-400">{a.model}</span>
-                    <span className={`px-1.5 rounded text-[10px] font-semibold ${a.status === "passed" ? "bg-emerald-50 text-emerald-700" : a.status === "failed" ? "bg-red-50 text-red-600" : "bg-slate-100 text-slate-500"}`}>{a.status}</span>
-                    {a.latency !== null && <span className="text-slate-400">{ms(a.latency)}</span>}
+                <li key={a.key} className="rounded-lg border border-slate-100 p-3 text-xs dark:border-slate-800">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <span className="h-2 w-2 rounded-sm" style={{ background: modelColor(a.model, allLabels) }} aria-hidden />
+                    <b className="text-slate-900 dark:text-slate-100">{a.case_id}</b><span className="truncate text-slate-500">{a.model}</span>
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${a.status === "passed" ? "bg-emerald-50 text-emerald-700" : a.status === "failed" ? "bg-red-50 text-red-700" : "bg-slate-100 text-slate-600"}`}>{a.status.replace("_", " ")}</span>
+                    {a.latency !== null && <span className="ml-auto text-slate-400">{ms(a.latency)}</span>}
                   </div>
-                  {a.reply && <p className="mt-1 text-slate-600 whitespace-pre-wrap break-words">{a.reply}</p>}
+                  {a.reply && <p dir="auto" className="mt-2 max-h-44 overflow-y-auto whitespace-pre-wrap break-words rounded bg-slate-50 p-2 text-start leading-relaxed text-slate-700 dark:bg-slate-800/60 dark:text-slate-200">{a.reply}</p>}
                 </li>
               ))}
             </ul>
           )}
         </section>
-        <section className="rounded-xl border border-slate-200 bg-white p-4">
-          <h3 className="text-sm font-bold text-slate-900">{tx("Events")}</h3>
-          <ol className="mt-2 space-y-0.5 max-h-[420px] overflow-y-auto font-mono text-[11px] text-slate-600" data-testid="events">
-            {[...events].reverse().filter((e) => e.kind !== "progress").map((e) => <li key={e.seq}><span className="text-slate-400">{e.at.slice(11, 19)}</span> {e.kind} · {e.message}</li>)}
-          </ol>
+
+        <section className="min-w-0 rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900" aria-label={tx("Events")}>
+          <header className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3 dark:border-slate-800">
+            <h3 className="text-sm font-extrabold text-slate-900 dark:text-slate-50">{tx("Events")}</h3>
+            <label className="flex items-center gap-1.5 text-[11px] text-slate-600 dark:text-slate-300"><input type="checkbox" checked={showDetail} onChange={(e) => setShowDetail(e.target.checked)} data-testid="events-detail" />{tx("Show every step")}</label>
+          </header>
+          {lines.length === 0 ? <p className="px-4 py-8 text-center text-xs text-slate-400">{tx("No events yet.")}</p> : (
+            <ol className="max-h-[32rem] overflow-y-auto p-3 font-mono text-[11px]" data-testid="events">
+              {lines.map((l) => (
+                <li key={l.seq} className="grid grid-cols-[4.2rem_3.2rem_minmax(0,1fr)] gap-2 border-b border-slate-50 py-1 last:border-0 dark:border-slate-800">
+                  <span className="text-slate-400">{l.time}</span><span className="text-slate-400">{l.kind}</span>
+                  <span className={`break-words ${l.tone === "good" ? "text-emerald-700 dark:text-emerald-300" : l.tone === "bad" ? "font-semibold text-red-700 dark:text-red-300" : l.tone === "info" ? "font-semibold text-slate-800 dark:text-slate-100" : "text-slate-500"}`}>{l.text}</span>
+                </li>
+              ))}
+            </ol>
+          )}
         </section>
       </div>
 

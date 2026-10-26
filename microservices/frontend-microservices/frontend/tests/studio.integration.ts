@@ -8,7 +8,7 @@
 import { createElement } from "react";
 import api from "@/app/services/api";
 import { getCostOverview } from "@/lib/evalCosts";
-import { getBreakdown, getResult, listBenchmarks } from "@/lib/evalBenchmarks";
+import { getBenchmark as getBenchmarkDetail, getBreakdown, getResult, listBenchmarks } from "@/lib/evalBenchmarks";
 import { decide, getDraft } from "@/lib/evalDrift";
 import * as S from "@/lib/evalStudio";
 import CaseHeatmap from "@/components/studio/CaseHeatmap";
@@ -20,6 +20,20 @@ import { RunSummaryBody } from "@/components/studio/RunSummary";
 import AnalyticsView, { AnalyticsBody, drill } from "@/components/studio/AnalyticsView";
 import SavedViews, { SavedViewsPanel } from "@/components/studio/SavedViews";
 import * as V from "@/lib/savedViews";
+import * as D from "@/lib/simulateDraft";
+import { runSteps, STORING_MESSAGE } from "@/lib/runSteps";
+import * as BT from "@/lib/benchmarkTable";
+import { spendMeter, stateInfo, visibleEvents } from "@/lib/runView";
+import * as SS from "@/lib/setupSteps";
+import SetupSteps from "@/components/benchmarking/SetupSteps";
+import RunHeader from "@/components/benchmarking/RunHeader";
+import { judgeView } from "@/lib/judgeView";
+import { JudgeBody } from "@/components/benchmarking/JudgePanel";
+import VisualAnalytics, { VA_TABS } from "@/components/benchmarking/VisualAnalytics";
+import ComparisonTable, { ComparisonGrid } from "@/components/benchmarking/ComparisonTable";
+import { pct as pctOf, ms as msOf, usd as usdOf, type ModelResult } from "@/lib/evalBenchmarks";
+import RunStepper from "@/components/benchmarking/RunStepper";
+import { EMPTY as EMPTY_FORM } from "@/components/benchmarking/SetupPanel";
 import { ExecutionsView } from "@/components/studio/InvestigateView";
 import { ModeBanner, overlaysFor, tally } from "@/components/studio/SimulateView";
 import { HealthStrip } from "@/components/studio/ExploreView";
@@ -80,6 +94,152 @@ function pure(): void {
     && /<button[^>]*disabled[^>]*>\s*Save/.test(panel) && panelText.includes("Copy a link to this page") && panelText.includes("Stored in this browser only"), panelText.slice(0, 300));
   check("with none saved the panel says so", text(html(createElement(SavedViewsPanel, { views: [], name: "", onName: noop, onSave: noop, onOpen: noop, onDelete: noop, onCopy: noop, note: "This browser would not store it" }))).includes("No saved views yet") );
   check("the Views button is closed to begin with, and says what it opens", typeof SavedViews === "function");
+  // ── the Simulate form is kept when the person leaves the page ──
+  const chosen = { ...EMPTY_FORM, dataset: "individual-single-turn", version: "1.0.6", models: ["openai/gpt-4o-mini", "openai/gpt-4.1"], repetitions: 7, judge: "openai/gpt-4.1", metrics: ["safety", "task_completion"] as ("safety" | "task_completion")[], stages: ["lead-onboarding"],
+    budget: "0.5", stopOnCritical: true, skills: "off" as const, maxLatencyMs: "8000", gate: true, gateMinPassPct: "85" };
+  const enc = D.formToParams(chosen, EMPTY_FORM);
+  const dec = D.paramsToForm((n) => enc[n] ?? null) as Record<string, unknown>;
+  check("every choice made on the form survives the address: written as short s_* parameters and read back identical", ["version", "models", "repetitions", "judge", "metrics", "stages", "budget", "stopOnCritical", "skills", "maxLatencyMs", "gate", "gateMinPassPct"].every((k) => JSON.stringify(dec[k]) === JSON.stringify((chosen as Record<string, unknown>)[k])), [enc, dec]);
+  check("only what differs from an empty form is written, so an untouched form leaves the address clean", Object.keys(D.formToParams(EMPTY_FORM, EMPTY_FORM)).length === 0 && !("s_ms" in D.formToParams({ ...EMPTY_FORM, repetitions: 5 }, EMPTY_FORM)));
+  check("an address with no form parameters brings back nothing (the saved draft is used instead)", D.paramsToForm(() => null) === null);
+  check("what is read from the address is checked: a mode or skills value that does not exist, a non-whole or out-of-range repetition and an over-long list are dropped", (() => {
+    const bad = D.paramsToForm((n) => ({ s_md: "evil", s_sk: "maybe", s_rp: "1.5", s_ms: Array.from({ length: 80 }, (_, i) => `m${i}`).join(",") } as Record<string, string>)[n] ?? null) as Record<string, unknown>;
+    return bad.mode === undefined && bad.skills === undefined && bad.repetitions === undefined && (bad.models as string[]).length === 40 && D.paramsToForm((n) => (n === "s_rp" ? "500" : null)) === null;
+  })());
+  check("a saved draft is read back only when well formed; garbage, a non-object and a dataset name with odd characters are refused", D.parseDraft("nope") === null && D.parseDraft("[]") === null && D.parseDraft(null) === null
+    && D.parseDraft(JSON.stringify({ dataset: "../etc", params: { s_rp: "3", s_jd: "x" } }))?.hasOwnProperty("dataset") === false
+    && D.parseDraft(JSON.stringify({ dataset: "individual-single-turn", params: enc }))?.dataset === "individual-single-turn" && D.parseDraft(JSON.stringify({ dataset: "individual-single-turn", params: enc }))?.repetitions === 7);
+  check("without browser storage nothing breaks: no draft is found, and saving says it could not", D.loadDraft() === null && D.saveDraft(chosen, EMPTY_FORM) === false);
+  // ── the four stages of a run ──
+  const ev = (...kinds: string[]) => kinds.map((k) => ({ kind: k === "store" ? "log" : k, message: k === "store" ? STORING_MESSAGE : null }));
+  const st = (i: Parameters<typeof runSteps>[0]) => runSteps(i).map((x) => x.state).join(",");
+  const base = { events: [] as { kind: string; message: string | null }[], benchmarkId: null as string | null, resultsChecked: false, error: null as string | null };
+  check("queued: step 1 is in progress and says the worker must be running (with the command), nothing later has started", st({ ...base, state: "queued" }) === "current,waiting,waiting,waiting" && /job worker/.test(runSteps({ ...base, state: "queued" })[0].note ?? "") && /envctl\.py worker/.test(runSteps({ ...base, state: "queued" })[0].note ?? ""));
+  check("running: step 2 is in progress; once the results start being saved, step 3 is", st({ ...base, state: "running", events: ev("case") }) === "done,current,waiting,waiting" && st({ ...base, state: "running", events: ev("case", "store") }) === "done,done,current,waiting");
+  check("finished and stored: all four steps are done and the last says the benchmark can be opened", st({ ...base, state: "succeeded", events: ev("case", "store"), benchmarkId: "bench-1" }) === "done,done,done,done");
+  check("finished but not found yet: step 4 is 'looking', and after the search it is a problem that names the retry command (never a silent blank)", st({ ...base, state: "succeeded", events: ev("case", "store") }) === "done,done,done,current"
+    && st({ ...base, state: "succeeded", events: ev("case", "store"), resultsChecked: true }) === "done,done,done,problem" && /ingest-group/.test(runSteps({ ...base, state: "succeeded", events: ev("case", "store"), resultsChecked: true })[3].note ?? ""));
+  check("failed while storing: step 3 is the problem and carries the job's own error", st({ ...base, state: "failed", events: ev("case", "store"), error: "results were not stored: boom" }) === "done,done,problem,waiting" && runSteps({ ...base, state: "failed", events: ev("case", "store"), error: "results were not stored: boom" })[2].note === "results were not stored: boom");
+  check("cancelled or failed part way: step 2 is the problem; cancelled before anything ran says so; nothing after it is called done", st({ ...base, state: "cancelled", events: ev("case") }) === "done,problem,waiting,waiting" && /before any case ran/.test(runSteps({ ...base, state: "cancelled" })[1].note ?? "")
+    && st({ ...base, state: "failed", error: "refused" }) === "done,problem,waiting,waiting");
+  const sh = text(html(createElement(RunStepper, { ...base, state: "succeeded", events: ev("case", "store"), resultsChecked: true, onCheckAgain: noop })));
+  const sh2 = html(createElement(RunStepper, { ...base, state: "running", events: ev("case") }));
+  check("the stepper writes each state as a word as well as colouring it, marks the current step for assistive technology, and offers 'Check again' only when results are missing", sh.includes("Queued") && sh.includes("Running") && sh.includes("Storing results") && sh.includes("Results ready") && sh.includes("problem") && sh.includes("Check again")
+    && sh2.includes('aria-current="step"') && !sh2.includes("Check again") && sh2.includes('data-step="running" data-state="current"'), sh.slice(0, 300));
+  // ── the model comparison table ──
+  const mr = (label: string, o: Partial<ModelResult>): ModelResult => ({ label, status: "measured", synthetic: false, executions: 100, ran: 100, ...o });
+  const A = mr("openai/gpt-4.1", { pass_rate: 0.9, ci_low: 0.82, ci_high: 0.95, critical_failures: 3, consistency: 0.95, flaky_cases: ["x"], latency_ms: { n: 100, mean: 2100, p50: 2000, p95: 9000, min: 1, max: 1, stdev: 1 }, tokens: { input: 1000, output: 500, cached: 0 }, cost: { candidate_usd: 0.9, judge_usd: 0.1, total_usd: 1.0, per_passed_usd: 0.01, executions_with_unknown_cost: 0 }, quality: { safety: { n: 10, mean: 0.9, met: 9 } } });
+  const B = mr("openai/gpt-4o-mini", { pass_rate: 0.8, ci_low: 0.7, ci_high: 0.87, critical_failures: 1, consistency: null, flaky_cases: [], latency_ms: { n: 100, mean: 1100, p50: 1000, p95: 5000, min: 1, max: 1, stdev: 1 }, tokens: { input: 900, output: 400, cached: 100 }, cost: { candidate_usd: 0.3, judge_usd: 0.1, total_usd: 0.4, per_passed_usd: null, executions_with_unknown_cost: 4 }, quality: { safety: { n: 10, mean: 0.7, met: 7 } } });
+  const Sx = mr("mock/mock-oracle", { synthetic: true, pass_rate: 1, critical_failures: 0, latency_ms: { n: 100, mean: 50, p50: 50, p95: 60, min: 1, max: 1, stdev: 1 }, cost: { candidate_usd: 0, judge_usd: 0, total_usd: 0, per_passed_usd: 0, executions_with_unknown_cost: 0 } });
+  const Nr = mr("gemini/gemini-2.5-pro", { status: "blocked_missing_credentials", executions: 0, ran: 0 });
+  const tb = BT.buildTable({ [A.label]: A, [B.label]: B, [Sx.label]: Sx, [Nr.label]: Nr }, [A.label, B.label, Sx.label, Nr.label]);
+  const rowOf = (id: string) => tb.flatMap((g) => g.rows).find((r) => r.id === id)!;
+  const bestOf = (id: string) => Object.entries(rowOf(id).cells).filter(([, c]) => c.best).map(([l]) => l).join();
+  check("the table has the four groups (quality, reliability, speed, cost and tokens) and every metric the benchmark records, including each judged metric", tb.map((g) => g.id).join() === "quality,reliability,speed,cost"
+    && ["accuracy", "critical", "q_safety", "consistency", "p50", "p95", "ttft", "inference", "per_pass", "judge", "tok_in", "unknown"].every((id) => tb.flatMap((g) => g.rows).some((r) => r.id === id)));
+  check("the best value in a row goes to the model that is better in the right direction: higher accuracy and lower latency are different models, and fewer critical failures wins", bestOf("accuracy") === A.label && bestOf("p50") === B.label && bestOf("p95") === B.label && bestOf("critical") === B.label && bestOf("q_safety") === A.label, [bestOf("accuracy"), bestOf("p50"), bestOf("critical")]);
+  check("a scripted stand-in model is shown but never best, even where it has the top figure (100% accuracy, 50 ms), and a model that did not run has no figures and says why", !rowOf("accuracy").cells[Sx.label].best && !rowOf("p50").cells[Sx.label].best && rowOf("accuracy").cells[Sx.label].text.startsWith("100")
+    && rowOf("accuracy").cells[Nr.label].text === "not run" && /no API key/.test(rowOf("accuracy").cells[Nr.label].note ?? ""));
+  check("a cost that could not be priced is 'unknown' with the count, never zero, and a missing consistency says it needs repeats; informational rows (tokens, judge cost) have no best", rowOf("per_pass").cells[B.label].text === "unknown" && /4 execution/.test(rowOf("per_pass").cells[B.label].note ?? "")
+    && rowOf("consistency").cells[B.label].text === "needs 2+ repeats" && bestOf("tok_in") === "" && bestOf("judge") === "" && bestOf("total") === "");
+  check("the displayed figures are the recorded ones, formatted: accuracy with its interval, latency and money", rowOf("accuracy").cells[A.label].text === `${pctOf(0.9, 1)} (${pctOf(0.82, 0)}–${pctOf(0.95, 0)})` && rowOf("p50").cells[A.label].text === msOf(2000) && rowOf("per_pass").cells[A.label].text === usdOf(0.01));
+  const one = BT.buildTable({ [A.label]: A, [Sx.label]: Sx }, [A.label, Sx.label]);
+  check("with a single real model there is nothing to compare, so no value is marked best; rows where the models are equal are not marked either", one.flatMap((g) => g.rows).every((r) => Object.values(r.cells).every((c) => !c.best))
+    && BT.buildTable({ [A.label]: A, [B.label]: { ...B, pass_rate: 0.9 } }, [A.label, B.label]).flatMap((g) => g.rows).find((r) => r.id === "accuracy")!.same === true);
+  const diff = BT.onlyDifferences(BT.buildTable({ [A.label]: A, [B.label]: { ...B, pass_rate: 0.9, critical_failures: 3 } }, [A.label, B.label]));
+  check("'only what differs' drops the rows where the real models are the same", !diff.flatMap((g) => g.rows).some((r) => r.id === "accuracy" || r.id === "critical") && diff.flatMap((g) => g.rows).some((r) => r.id === "p50"));
+  const csv = BT.tableToCsv(tb, [A.label, B.label]);
+  check("the CSV has a header with the models, one line per metric, and marks the best", csv.split("\n")[0] === "Group,Metric,openai/gpt-4.1,openai/gpt-4o-mini" && csv.split("\n").length > 20 && /Accuracy,.*\(best\)/.test(csv), csv.split("\n").slice(0, 3));
+  const grid = (showAll: boolean) => html(createElement(ComparisonGrid, { groups: tb, labels: [A.label, B.label, Sx.label, Nr.label], allLabels: [A.label, B.label, Sx.label, Nr.label], showAll, models: { [A.label]: A, [B.label]: B, [Sx.label]: Sx, [Nr.label]: Nr } }));
+  const compact = grid(false), expanded = grid(true);
+  check("the table is simple by default: only the seven key measures are shown, the detail rows (tokens, flaky cases, time to first token...) appear only on request, and the number of rows grows accordingly",
+    ["accuracy", "critical", "consistency", "p50", "p95", "per_pass", "total"].every((id) => compact.includes(`data-row="${id}"`)) && (compact.match(/data-row=/g) ?? []).length === 7 && !compact.includes('data-row="tok_in"') && !compact.includes('data-row="flaky"')
+    && expanded.includes('data-row="tok_in"') && expanded.includes('data-row="flaky"') && (expanded.match(/data-row=/g) ?? []).length === tb.reduce((n, g) => n + g.rows.length, 0));
+  check("the table is accessible and quiet: a caption, column and row headers, the best marked with a check AND the word for assistive technology (no 'BEST' pills), a scripted model's column muted and labelled, group labels that are plain headings",
+    compact.includes("<caption") && compact.includes('scope="col"') && compact.includes('scope="row"') && compact.includes('data-best="true"') && compact.includes(">✓<") && compact.includes('class="sr-only">best</span>') && !compact.includes("uppercase tracking-wide text-emerald") && compact.includes('data-scripted="true"')
+    && compact.includes("scripted stand-in") && compact.includes('scope="rowgroup"') && !compact.includes("aria-expanded"));
+  const hl = BT.highlights(tb);
+  check("the highlights say who is the most accurate and who is the fastest, from the real models only (the scripted 100% and 50 ms never win), and name no one for a measure that has a single comparable value", hl.map((h) => `${h.id}:${h.model}`).join() === `accuracy:${A.label},p50:${B.label}` && !hl.some((h) => h.model === Sx.label));
+  const full = text(html(createElement(ComparisonTable, { models: { [A.label]: A, [B.label]: B, [Sx.label]: Sx }, labels: [A.label, B.label, Sx.label], allLabels: [A.label, B.label, Sx.label], benchmarkId: "b1", synthetic: true })));
+  check("the section leads with the highlights, then the table, and explains itself in one line: a check marks the best of the real models, scripted ones never count, a dash is not zero; with 'Show all metrics' (with the count), 'Only what differs' and the CSV",
+    full.indexOf("Most accurate") >= 0 && full.indexOf("Most accurate") < full.indexOf("Model comparison") && full.includes("Fastest (median)") && full.includes("Show all metrics (") && full.includes("never count") && full.includes("not measured, never zero") && full.includes("Only what differs") && full.includes("Download CSV"), full.slice(0, 260));
+
+  // ── the judge's part ──
+  const q = (mean: number, met: number, n = 10) => ({ n, mean, met });
+  const jm = (o: Partial<ModelResult>) => mr("x", o);
+  const JA = jm({ label: A.label, pass_rate: 0.9, quality: { safety: q(0.9, 9), task_completion: q(0.8, 8) }, cost: { candidate_usd: 1, judge_usd: 0.1, total_usd: 1.1, per_passed_usd: 0.01, executions_with_unknown_cost: 0 } });
+  const JB = jm({ label: B.label, pass_rate: 0.8, quality: { safety: q(0.7, 7), task_completion: q(0.6, 6) }, cost: { candidate_usd: 0.3, judge_usd: 0.1, total_usd: 0.4, per_passed_usd: 0.01, executions_with_unknown_cost: 0 } });
+  const JS = jm({ label: Sx.label, synthetic: true, pass_rate: 1, quality: { safety: q(1, 10), task_completion: q(1, 10) } });
+  const mk = (judge: string | null, models: Record<string, ModelResult>, calibration: unknown = null) => ({ judge_model: judge, summary: { models, judge: { model: judge, calibration } } } as unknown as Parameters<typeof judgeView>[0]);
+  const scoredV = judgeView(mk("openai/gpt-4o", { [A.label]: JA, [B.label]: JB, [Sx.label]: JS }, { status: "trusted", agreement: 0.95 }));
+  check("a judged benchmark: one row per metric, the best of the real models per metric, a scripted model never best even at 1.00, an average per model, and the judging cost", scoredV.state === "scored" && scoredV.rows.length === 2
+    && scoredV.rows.every((r) => r.cells[A.label].best && !r.cells[B.label].best && !r.cells[Sx.label].best) && Math.abs((scoredV.models.find((m) => m.label === A.label)!.overall ?? 0) - 0.85) < 1e-9 && scoredV.totalCostUsd !== null && Math.abs(scoredV.totalCostUsd - 0.2) < 1e-9 && scoredV.notes.length === 0, scoredV);
+  check("the judge's own trustworthiness is stated: trusted, partly trusted, not trusted and never checked each get their own title and tone (never a silent default of 'fine')",
+    judgeView(mk("j/x", { [A.label]: JA }, { status: "trusted", agreement: 0.9 })).calibration?.tone === "good" && judgeView(mk("j/x", { [A.label]: JA }, { status: "partial", agreement: 0.7 })).calibration?.tone === "warn"
+    && judgeView(mk("j/x", { [A.label]: JA }, { status: "not_trusted", agreement: 0.3 })).calibration?.tone === "bad" && judgeView(mk("j/x", { [A.label]: JA }, null)).calibration?.tone === "unknown" && judgeView(mk(null, { [A.label]: JA })).calibration === null);
+  const unscoredV = judgeView(mk("anthropic/claude-haiku-4-5", { [A.label]: jm({ label: A.label, pass_rate: 0.9 }), [B.label]: jm({ label: B.label, pass_rate: 0.8 }) }));
+  const noneV = judgeView(mk(null, { [A.label]: jm({ label: A.label, pass_rate: 0.9 }), [B.label]: jm({ label: B.label, pass_rate: 0.8 }) }));
+  check("a judge that produced no scores is 'unscored' and says why and what to do; no judge at all is 'none'; neither shows a table of invented scores", unscoredV.state === "unscored" && /produced no scores/.test(unscoredV.notes[0] ?? "") && /openai\/gpt-4o/.test(unscoredV.notes[0] ?? "") && unscoredV.rows.length === 0 && noneV.state === "none" && noneV.notes.length === 0);
+  check("a judge that is also a compared model, and a scripted judge, are called out as weaker evidence", judgeView(mk(A.label, { [A.label]: JA, [B.label]: JB })).notes.some((n) => /also one of the compared models/.test(n)) && judgeView(mk("mock/mock-judge", { [A.label]: JA })).notes.some((n) => /scripted stand-in/.test(n)));
+  const winV = scoredV.verdict;
+  check("the judge's verdict names the winner in words: the real model with the higher average, by how much, and on how many metrics; a scripted model never wins", winV?.kind === "winner" && winV.model === A.label && /gpt-4\.1 scored highest/.test(winV.title) && /0\.85 against 0\.65 for gpt-4o-mini, ahead on 2 of 2 metrics/.test(winV.detail) && winV.model !== Sx.label, winV);
+  const tieV = judgeView(mk("openai/gpt-4o", { [A.label]: JA, [B.label]: { ...JA, label: B.label } })).verdict;
+  const fewV = judgeView(mk("openai/gpt-4o", { [A.label]: { ...JA, quality: { safety: q(0.9, 1, 1) } }, [B.label]: { ...JB, quality: { safety: q(0.5, 0, 1) } } })).verdict;
+  check("level scores are 'no winner', not a coin toss; a verdict that rests on very few judged answers says so; a scripted judge is 'no winner can be named' however the numbers look; one real model is 'nothing to compare'",
+    tieV?.kind === "tie" && /No winner/.test(tieV.title) && judgeView(mk("mock/mock-judge", { [A.label]: JA, [B.label]: JB })).verdict?.kind === "unreliable" && /scripted stand-in/.test(judgeView(mk("mock/mock-judge", { [A.label]: JA, [B.label]: JB })).verdict!.detail)
+    && judgeView(mk("openai/gpt-4o", { [A.label]: JA, [Sx.label]: JS })).verdict?.kind === "insufficient" && fewV?.kind === "winner" && /only 1 judged answer/.test(fewV.detail) && judgeView(mk(null, { [A.label]: JA })).verdict === null && unscoredV.verdict === null);
+  const runsList = [{ run_id: "r-a", model: A.label }, { run_id: "r-b", model: B.label }];
+  const jh = (v: ReturnType<typeof judgeView>, labels: string[] = [A.label, B.label, Sx.label]) => html(createElement(JudgeBody, { v, labels, allLabels: labels, runs: runsList }));
+  const sHtml = jh(scoredV), uHtml = jh(unscoredV), nHtml = jh(noneV), sText = text(sHtml);
+  check("the judge section shows the judge, its calibration as a labelled badge, a bordered table of scores with bars and 'met the threshold' counts, the best marked with a check and a hidden word, and a link to the answers the judge failed for each model",
+    sHtml.includes('data-testid="judge-panel"') && sHtml.includes('data-state="scored"') && sHtml.includes('data-testid="judge-verdict"') && sText.includes("Who won on the judge's scores?") && sText.includes("openai/gpt-4o") && sText.includes("Trusted judge") && sText.includes("95% agreement") && sHtml.includes('data-testid="judge-table"') && sHtml.includes('scope="row"') && sHtml.includes('data-best="true"')
+    && sHtml.includes('class="sr-only">best</span>') && sText.includes("9 of 10 met the threshold") && sText.includes("Average of the metrics") && sText.includes("Cost of judging") && (sHtml.match(/data-testid="judge-reasons-link"/g) ?? []).length === 2 && /href="[^"]*ir=r-a[^"]*fl=L2|href="[^"]*fl=L2[^"]*ir=r-a/.test(sHtml), sText.slice(0, 240));
+  check("an unscored judge is a visible alert with the cause, and a missing judge says what was and was not measured; neither draws a score table", uHtml.includes('role="alert"') && text(uHtml).includes("produced no scores") && !uHtml.includes('data-testid="judge-table"') && nHtml.includes('data-testid="judge-none"') && text(nHtml).includes("No judge was used in this benchmark")
+    && text(nHtml).includes("rule-based checks") && !nHtml.includes('data-testid="judge-table"'));
+  // ── the Watch page ──
+  check("a job's state is always a word with an icon (never colour alone): succeeded, running, queued, failed, cancelled and lost each have their own, a cancelling run says so, and an unknown state is shown as it is", stateInfo("succeeded").label === "Succeeded" && stateInfo("succeeded").icon === "✓" && stateInfo("succeeded").tone === "good"
+    && ["running", "queued", "failed", "cancelled", "lost"].every((x) => stateInfo(x).label.length > 3 && stateInfo(x).hint.length > 5) && stateInfo("running", true).label === "Cancelling" && stateInfo("succeeded", true).label === "Succeeded" && stateInfo("odd").label === "odd");
+  const mt = spendMeter(0.06, 0.18, 3);
+  check("the spend meter says how much of the estimate is used (a bar that never passes full), flags a run that cost more than estimated, and warns near the budget", Math.abs((mt.pctOfEstimate ?? 0) - 33.33) < 0.1 && !mt.overEstimate && !mt.nearBudget && spendMeter(0.3, 0.18, 3).overEstimate && spendMeter(0.3, 0.18, 3).pctOfEstimate === 100
+    && spendMeter(2.5, 3, 3).nearBudget && spendMeter(0.1, null, null).pctOfEstimate === null);
+  const evs = [{ seq: 1, at: "2026-10-26T16:35:00", kind: "log", message: "IND-AGT-003 r1: starting" }, { seq: 2, at: "2026-10-26T16:35:15", kind: "case", message: "IND-AGT-003 r1: failed (critical_assertion_failed)" }, { seq: 3, at: "2026-10-26T16:35:20", kind: "progress", message: "" },
+    { seq: 4, at: "2026-10-26T16:35:44", kind: "case", message: "IND-AGT-005 r1: passed" }, { seq: 5, at: "2026-10-26T16:35:55", kind: "state", message: "succeeded" }];
+  const quiet = visibleEvents(evs, false), all = visibleEvents(evs, true);
+  check("the events list is quiet by default: the repetitive 'starting' lines and the progress ticks are hidden, newest first, results coloured by outcome; 'show every step' brings the starting lines back", quiet.map((l) => l.seq).join() === "5,4,2" && all.map((l) => l.seq).join() === "5,4,2,1"
+    && quiet.find((l) => l.seq === 4)!.tone === "good" && quiet.find((l) => l.seq === 2)!.tone === "bad" && quiet.find((l) => l.seq === 5)!.tone === "info" && quiet[0].time === "16:35:55");
+  const hdr = (o: Partial<Parameters<typeof RunHeader>[0]> = {}) => html(createElement(RunHeader, { state: "succeeded", cancelRequested: false, dataset: "individual-single-turn", version: "1.0.6", mode: "agent", repeat: "1", models: ["openai/gpt-4.1", "openai/gpt-4o-mini"], jobId: "f447ee36-5efa-4dbb-971d-7e71113555b8",
+    spent: 0.06, estimate: 0.18, budget: 3, running: false, busy: false, canOpenResults: true, onCancel: noop, onRerun: noop, onOpenResults: noop, onOpenMap: noop, ...o }));
+  const done = hdr(), live = hdr({ state: "running", running: true, canOpenResults: false });
+  check("the run header shows the status as a word with its icon, the dataset and version, the mode, the models as chips, the job id (breakable, with a copy button), and the spend against the estimate and the budget",
+    text(done).includes("Succeeded") && done.includes('data-testid="job-state"') && done.includes('data-tone="good"') && text(done).includes("individual-single-turn 1.0.6") && text(done).includes("Agent") && text(done).includes("openai/gpt-4o-mini") && done.includes("break-all") && text(done).includes("Copy")
+    && text(done).includes("of an estimated") && text(done).includes("Budget") && done.includes('role="progressbar"') && done.includes('aria-valuenow="33"'), text(done).slice(0, 300));
+  check("the actions follow the state: a finished run offers Open results, the map and Rerun and no Cancel; a running one offers the map and Cancel and no Rerun or Open results",
+    done.includes('data-testid="open-results"') && done.includes('data-testid="open-map"') && done.includes('data-testid="rerun"') && !done.includes('data-testid="cancel"') && live.includes('data-testid="cancel"') && live.includes('data-testid="open-map"') && !live.includes('data-testid="rerun"') && !live.includes('data-testid="open-results"') && live.includes('data-tone="active"'));
+  // ── the setup pipeline ──
+  const f0 = { ...EMPTY_FORM };
+  const f1 = { ...EMPTY_FORM, dataset: "individual-single-turn", version: "1.0.6", models: ["openai/gpt-4.1", "openai/gpt-4o-mini"], judge: "openai/gpt-4o" };
+  const stOf = (f: typeof EMPTY_FORM, current: SS.StepId, visited: SS.StepId[], problems: string[] = [], ready = false) => SS.setupSteps(f, { current, visited: new Set(visited), problems, ready });
+  check("the pipeline has the five steps in a person's order (models, questions, method, judge, review), each with a plain question and one sentence of help, and the judge is marked optional", SS.ORDER.join() === "models,questions,method,judge,review" && SS.ORDER.every((id) => SS.COPY[id].question.endsWith("?") || SS.COPY[id].question.endsWith(".")) && SS.ORDER.every((id) => SS.COPY[id].help.length > 40) && SS.COPY.judge.optional && !SS.COPY.models.optional);
+  check("an empty form: nothing is done, the open step is current, and the summaries say what is missing", stOf(f0, "models", ["models"]).map((x) => x.state).join() === "current,todo,todo,todo,todo" && stOf(f0, "models", ["models"]).filter((x) => x.current).length === 1 && /at least two/.test(stOf(f0, "models", ["models"])[0].summary) && /choose a test set/.test(stOf(f0, "models", ["models"])[1].summary));
+  const filled = stOf(f1, "review", ["models", "questions", "method", "judge", "review"], [], true);
+  check("a filled-in form: every step is done, and the summaries are short and readable (model names, test set and version, method and repeats, the judge)", filled.map((x) => x.state).join() === "done,done,done,done,current", filled.map((x) => x.state).join());
+  check("the summaries read well: models by name, 'individual-single-turn 1.0.6 · all stages', 'Agent · 3× each', the judge by name, and 'no judge' when there is none", filled[0].summary === "gpt-4.1, gpt-4o-mini" && filled[1].summary === "individual-single-turn 1.0.6 · all stages" && filled[2].summary === "Agent · 3× each" && filled[3].summary === "gpt-4o" && /no judge/.test(stOf(f0, "models", [])[3].summary)
+    && stOf({ ...f1, stages: ["lead-onboarding"] }, "models", [])[1].summary.endsWith("1 stage") && stOf({ ...f1, mode: "direct" }, "models", [])[2].summary.startsWith("Direct"));
+  check("a problem is shown on the step where it can be fixed: too few models on Models, a judge that is also a compared model on Judge, a bad temperature on Method, a bad budget on Review (only once Review was visited), a missing dataset on Questions",
+    SS.problemStep("Choose at least two models to compare.") === "models" && SS.problemStep("The judge is also one of the models compared. Choose another judge, or allow it on purpose.") === "judge" && SS.problemStep("Temperature must be a number.") === "method" && SS.problemStep("The budget must be a number of dollars.") === "review"
+    && SS.problemStep("Choose a published dataset version.") === "questions" && stOf(f1, "models", ["models"], ["The judge is also one of the models compared."])[3].state === "problem" && stOf(f1, "models", ["models"], ["The budget must be a number of dollars."])[4].state !== "problem" && stOf(f1, "review", ["models", "review"], ["The budget must be a number of dollars."])[4].state === "problem");
+  check("only the two steps that cannot be skipped block moving on: Models until two are chosen, Questions until a published version is chosen; Method, Judge and Review never block; next and previous stay inside the pipeline",
+    !SS.canAdvance("models", f0) && SS.canAdvance("models", f1) && !SS.canAdvance("questions", { ...f1, version: "" }) && SS.canAdvance("method", f0) && SS.canAdvance("judge", f0) && SS.nextOf("review") === "review" && SS.prevOf("models") === "models" && SS.nextOf("models") === "questions" && SS.prevOf("judge") === "method");
+  const pipeHtml = html(createElement(SetupSteps, { steps: stOf(f1, "judge", ["models", "questions", "method", "judge"], ["The judge is also one of the models compared."]), onGo: noop })), pipeText = text(pipeHtml);
+  check("the pipeline is drawn as an ordered list of five buttons, the current step marked for assistive technology, each state said in words (not by colour alone), with a summary under each step",
+    pipeHtml.includes('data-testid="setup-steps"') && (pipeHtml.match(/data-step=/g) ?? []).length === 5 && pipeHtml.includes('aria-current="step"') && pipeHtml.includes('data-step="judge" data-state="problem"') && pipeText.includes("current step, needs attention") && pipeText.includes("needs attention") && pipeText.includes("done:") && pipeText.includes("Models") && pipeText.includes("Review and start") && pipeText.includes("gpt-4.1, gpt-4o-mini") && pipeText.includes("optional") && pipeHtml.includes("<ol") && (pipeHtml.match(/<button/g) ?? []).length === 5, pipeText.slice(0, 200));
+  // ── visual analytics ──
+  const vaModels = { [A.label]: A, [B.label]: B };
+  const vaHtml = (tab: (typeof VA_TABS)[number]["id"], hist: unknown[] = []) => html(createElement(VisualAnalytics, { tab, onTab: noop, onClose: noop, models: vaModels, labels: [A.label, B.label], hidden: new Set<string>(), onToggle: noop, breakdown: null, history: hist as never[], onOpenTrace: noop }));
+  const perf = vaHtml("perf"), qual = vaHtml("quality");
+  check("visual analytics has its four tabs, says which is open, and draws only the open one: performance has the interval, latency, tokens and cost charts, the quality tab has the judged and reliability charts and not the others", VA_TABS.length === 4 && perf.includes('data-testid="visual-analytics"') && VA_TABS.every((t) => perf.includes(`data-va="${t.id}"`)) && perf.includes('aria-pressed="true" title="Accuracy with its interval')
+    && perf.includes("Accuracy with its 95% interval") && perf.includes("Latency") && perf.includes("Token usage") && !perf.includes("Quality scored by the judge") && qual.includes("Quality scored by the judge") && qual.includes("Reliability") && !qual.includes("Token usage"), text(perf).slice(0, 160));
+  check("the history tab says so when there is nothing earlier to compare with, and the heatmap tab waits for its data instead of drawing an empty chart", text(vaHtml("history")).includes("No earlier benchmarks") && text(vaHtml("cases")).includes("Loading"));
   const events = [1, 2, 3, 4].map((i) => ({ seq: i, at: "", kind: "case", message: "", data: { model: i < 4 ? "openai/gpt-4o-mini" : "gemini/g", status: i === 2 ? "failed" : "passed", cost_usd: 0.01 } }));
   const t = tally(events);
   check("a running job's event stream is counted per provider", t.done === 4 && t.passed === 3 && t.failed === 1 && Math.abs(t.spent - 0.04) < 1e-9 && t.byProvider.openai.done === 3 && t.byProvider.gemini.done === 1);
@@ -282,7 +442,7 @@ async function reads(): Promise<void> {
     && g.edges.some((e) => e.from === "agent" && e.to === "skills" && e.kind === "loads") && obsAll.skills.every((k) => k.executions > 0 && k.executions >= k.ran), skillsNode?.stats);
   // ── runs: compare, summary, gate, report ──
   const allRuns = await S.listRuns({ limit: 200 });
-  const realRuns = allRuns.filter((r) => !r.synthetic && r.dataset === "individual-single-turn" && r.executions >= 40);
+  const realRuns = allRuns.filter((r) => !r.synthetic && r.model !== null && r.dataset === "individual-single-turn" && r.executions >= 40);          // runs that used a model: a function-level run has no model to compare
   check("the stored real runs are listed for choosing, complete ones only", realRuns.length >= 2 && allRuns.every((r) => r.state === "complete"), allRuns.length);
   if (realRuns.length >= 2) {
     const [newer, older] = realRuns;
@@ -319,6 +479,31 @@ async function reads(): Promise<void> {
   } else {
     check("a run that had a quality gate shows its verdict (no stored run has one, so this was not exercised)", true);
   }
+  const realBench = (await listBenchmarks(30)).find((b) => !b.synthetic && b.complete);
+  if (realBench) {
+    const detail = await getBenchmarkDetail(realBench.benchmark_id);
+    const ls = detail.summary.order.length ? detail.summary.order : Object.keys(detail.summary.models);
+    const rt = BT.buildTable(detail.summary.models, ls);
+    const acc = rt.flatMap((g) => g.rows).find((r) => r.id === "accuracy")!;
+    const measuredReal = ls.filter((l) => detail.summary.models[l].status === "measured" && !detail.summary.models[l].synthetic);
+    check("a real stored benchmark: every measured model's accuracy in the table is its recorded pass rate, and the model with the highest recorded pass rate is the one marked best",
+      measuredReal.every((l) => acc.cells[l].text.startsWith(pctOf(detail.summary.models[l].pass_rate, 1))) && (measuredReal.length < 2 || (() => { const hi = Math.max(...measuredReal.map((l) => detail.summary.models[l].pass_rate ?? -1)); const marked = measuredReal.filter((l) => acc.cells[l].best); return marked.every((l) => detail.summary.models[l].pass_rate === hi) || hi === Math.min(...measuredReal.map((l) => detail.summary.models[l].pass_rate ?? 2)); })()),
+      [ls, acc.cells]);
+    const ppr = rt.flatMap((g) => g.rows).find((r) => r.id === "per_pass")!;
+    check("... and its cost per passed case is the recorded one, or 'unknown' when the platform could not price it", measuredReal.every((l) => { const v = detail.summary.models[l].cost?.per_passed_usd; return ppr.cells[l].text === usdOf(v ?? null); }), ppr.cells);
+    const rendered = html(createElement(ComparisonTable, { models: detail.summary.models, labels: ls, allLabels: ls, benchmarkId: detail.benchmark_id, synthetic: detail.synthetic }));
+    check("the real benchmark's table renders with one column per model and every group", ls.every((l) => rendered.includes(`data-model="${l}"`)) && ["quality", "reliability", "speed", "cost"].every((g) => rendered.includes(`data-group="${g}"`)));
+  }
+  const allBench = await listBenchmarks(40);
+  let judgeOk = true, judgeSeen = 0;
+  for (const b of allBench.slice(0, 12)) {
+    const d = await getBenchmarkDetail(b.benchmark_id), v = judgeView(d);
+    judgeSeen += 1;
+    const anyScore = Object.values(d.summary.models).some((m) => Object.values(m.quality ?? {}).some((x) => x.n > 0 && x.mean !== null));
+    if ((!(d.summary.judge?.model ?? d.judge_model) && v.state !== "none") || ((d.summary.judge?.model ?? d.judge_model) && anyScore && v.state !== "scored") || ((d.summary.judge?.model ?? d.judge_model) && !anyScore && v.state !== "unscored")) judgeOk = false;
+    if (v.state === "scored") for (const r of v.rows) for (const [l, c] of Object.entries(r.cells)) if (c.mean !== null && c.mean !== (d.summary.models[l].quality?.[r.metric]?.mean ?? null)) judgeOk = false;
+  }
+  check("on the real stored benchmarks the judge's state follows the data (none without a judge, unscored when it produced nothing, scored otherwise) and every score shown is the stored one", judgeSeen > 0 && judgeOk, judgeSeen);
   const hl = S.headline(g);
   check("the headline sentence on the real ecosystem names how many parts are failing and the most urgent one with its reason", hl.state === "bad" ? /\d+ parts? (is|are) failing/.test(hl.text) && !!hl.nodeId && hl.text.includes(g.nodes.find((n) => n.id === hl.nodeId)!.health.reason) : hl.text.length > 10, hl);
   const hlHtml = text(html(createElement(Headline, { graph: g, onLook: noop })));

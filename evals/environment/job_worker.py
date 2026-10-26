@@ -262,7 +262,13 @@ def run_job(api: Platform, job: Dict[str, Any], stop: threading.Event) -> None:
     if run_id and state != "failed":
         events.put({"kind": "log", "message": "ingesting the run into the platform", "data": {}})
         post()
+        envctl.INGEST_FAILURES.clear()
         envctl.ingest_after(code, True, group=bool(config.get("vary")) or is_benchmark, benchmark=is_benchmark)
+        if envctl.INGEST_FAILURES:
+            # The evaluation ran (and spent money) but its results are not on the platform: say so, never "succeeded". The run folders are kept; `envctl.py ingest-group` retries after the cause is fixed.
+            why = " | ".join(envctl.INGEST_FAILURES)[:380]
+            events.put({"kind": "log", "message": f"the results could not be stored: {why}", "data": {}})
+            state, error = "failed", f"The evaluation ran, but its results were not stored: {why}. Retry with: python3 evals/environment/envctl.py ingest-group"
     api.call("POST", f"{base}/finish", {"state": state, "run_id": run_id, "error": error})
     print(f"worker: job {job_id} {state}" + (f" (run {run_id})" if run_id else ""), flush=True)
 
