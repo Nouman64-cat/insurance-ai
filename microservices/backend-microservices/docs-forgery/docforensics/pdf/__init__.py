@@ -12,10 +12,12 @@ from ..report import Category, Finding, Severity
 from .context import Context
 from .fonts import check_fonts
 from .images import check_embedded_images
+from .ink import uninked_glyphs
 from .layout import check_layout, extract_layouts
 from .meta import check_metadata
 from .revisions import check_revisions, revision_ends
 from .signatures import check_signatures
+from .typography import check_number_columns
 
 __all__ = ["Context", "check_pdf"]
 
@@ -114,8 +116,10 @@ def check_pdf(data: bytes, ctx: Context) -> tuple[list[Finding], list[str], bool
             if result:
                 findings += result[0]
                 errors += result[1]
-        findings += _run("layout", check_layout, errors, pdf, layouts) or []
+        uninked = _run("render", uninked_glyphs, errors, data, layouts) if layouts else None
+        findings += _run("layout", check_layout, errors, pdf, layouts, uninked) or []
         findings += _run("fonts", check_fonts, errors, pdf, layouts) or []
+        findings += _run("typography", check_number_columns, errors, layouts) or []
         if len(pdf.pages) > ctx.max_pages:
             errors.append(f"layout/fonts/images: only the first {ctx.max_pages} of {len(pdf.pages)} pages analysed")
 

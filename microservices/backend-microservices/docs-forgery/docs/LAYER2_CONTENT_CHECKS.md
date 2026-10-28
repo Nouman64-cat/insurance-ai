@@ -78,7 +78,7 @@ A numeric finding's figures are verified before it may be HIGH.
 
 | Document | How |
 |---|---|
-| PDF with a text layer | Every figure involved must appear in the PDF's own text |
+| PDF with a text layer | Every figure involved must appear in the PDF's own *visible* text. Text Layer 1 finds concealed (covered, clipped, invisible, overprinted, or without ink on the rendered page) is excluded, so an original value left hidden under an edit cannot confirm a figure |
 | Photo or scan | A second, targeted read of exactly those figures (the request names the figures, not the first answer) |
 
 | Outcome | Severity |

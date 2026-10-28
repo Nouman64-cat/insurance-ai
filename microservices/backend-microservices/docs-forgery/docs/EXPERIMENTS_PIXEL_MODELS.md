@@ -95,6 +95,24 @@ does not require a pixel model — it is deterministic and already covered by
 
 ---
 
+### Training-free pixel checks (October 2026)
+
+Three checks that need no model were tried on the "Find it again!" receipts (real forgeries, mostly made in Paint and
+GIMP; 355 of about 490 edited regions are a digit copied from elsewhere on the same receipt).
+
+| Check | Idea | Outcome |
+|---|---|---|
+| JPEG compatibility | Untouched 8x8 blocks of a once-JPEG image re-quantise to themselves; new pixels do not | ❌ Not applicable to this data: no receipt kept a JPEG lattice at any quality (they were resampled after compression). On text over white, clipping also breaks the test unless clipped pixels are treated as bounds. Worth revisiting for lossless saves of unresized JPEG scans |
+| Flat ink | Typed or drawn digits are filled with one exact grey; scanned ink always varies | ❌ Rejected: 50 of 240 genuine receipts have large flat dark areas (logos, black bars, saturated ink); it caught 2-3 forgeries on the edit |
+| Copy-move (exact) | A pasted region repeats another place pixel for pixel; a scan never does | ✅ Adopted in Layer 1 (`docforensics/pixels.py`). Results in [EVALUATION.md](EVALUATION.md) |
+
+Copy-move false alarms found and fixed on the way: ruled lines and page borders (identical along their length: patches
+must now vary in both directions), saturated near-binary scans (chance repeats: patches must hold mid-tones, and a
+region must outweigh the image's own chance matches), and rendered images (every glyph repeats: not judged).
+JPEG compression after the paste removes the evidence (0 of 10 Paint forgeries found after a JPEG save at quality 75 or
+92), so JPEG pixels are not compared. A copy-move check robust to JPEG needs approximate matching and its own
+false-alarm study.
+
 ### LLM / VLM visual opinion (Layer 2, not Layer 3)
 
 Asking a vision model "does this page look authentic?" is covered by the **visual inspection** call

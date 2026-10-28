@@ -8,6 +8,11 @@ Python environment with PyTorch and the model weights from GRIP-UNINA.
 > compression artefacts, and scanner noise all look similar to tampering). Layer 3 is therefore
 > deliberately conservative. See [EXPERIMENTS_PIXEL_MODELS.md](EXPERIMENTS_PIXEL_MODELS.md) for the
 > model candidates that were evaluated before TruFor was chosen.
+>
+> **Pixel checks that need no model run by default in Layer 1.** A digit copied from elsewhere on a
+> scan and pasted over another is found by exact copy-move matching (`docforensics/pixels.py`,
+> code `REGION_COPIED`), on every lossless image and lossless scan inside a PDF. It is fast, licence-free
+> and measured on real forgeries ([EVALUATION.md](EVALUATION.md)). TruFor remains opt-in.
 
 ---
 
@@ -163,7 +168,8 @@ class Layer3Result:
 |---|---|---|
 | PyTorch venv / weights not found | `unavailable` | `inconclusive` if no other findings |
 | Page rendering failed | `failed` | `inconclusive` if no other findings |
-| Worker subprocess timed out | `failed` | `inconclusive` if no other findings |
+| Worker subprocess timed out before scoring any page | `failed` | `inconclusive` if no other findings |
+| Worker timed out after scoring some pages | `partial` | pages already scored are kept and graded; the rest are listed as not scored |
 | Worker fatal error (no JSON output) | `failed` | `inconclusive` if no other findings |
 | Some pages scored, some failed | `partial` | incomplete; cannot produce a clean result |
 | `thresholds.json` missing | `ok` | scores shown but no `Finding` raised |
