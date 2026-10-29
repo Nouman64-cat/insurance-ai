@@ -76,7 +76,7 @@ def _tokens(glyphs: list[Glyph]) -> list[Token]:
     for line in lines:
         run: list[Glyph] = []
         for g in sorted(line, key=lambda g: g.bbox[0]) + [None]:
-            joins = (g is not None and run and g.text in "0123456789,.'()-"
+            joins = (g is not None and run and len(g.text) == 1 and g.text in "0123456789,.'()-"
                      and g.bbox[0] - run[-1].bbox[2] <= 0.25 * max(g.size, 1.0))
             if joins:
                 run.append(g)
@@ -88,7 +88,7 @@ def _tokens(glyphs: list[Glyph]) -> list[Token]:
                 out.append(Token(run, text, fonts.most_common(1)[0][0], max(c.size for c in digits),
                                  sum(c.baseline for c in digits) / len(digits), run[0].bbox[0], run[-1].bbox[2],
                                  min(c.bbox[1] for c in run), max(c.bbox[3] for c in run)))
-            run = [g] if g is not None and g.text in "0123456789(-" else []
+            run = [g] if g is not None and len(g.text) == 1 and g.text in "0123456789(-" else []
     return out
 
 

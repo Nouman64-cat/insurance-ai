@@ -70,7 +70,11 @@ def _copy_move(xo, where: str, errors: list[str]) -> list[Finding]:
     except Exception as exc:
         errors.append(f"copy-move ({where}): could not decode the image: {exc}")
         return []
-    found, copy_errors = check_copy_move(img, where)
+    try:
+        found, copy_errors = check_copy_move(img, where)
+    except Exception as exc:  # one image's failure must not discard the other images' findings
+        errors.append(f"copy-move ({where}): {type(exc).__name__}: {exc}")
+        return []
     errors += copy_errors
     return found
 

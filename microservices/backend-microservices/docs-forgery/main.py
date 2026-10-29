@@ -33,7 +33,14 @@ async def lifespan(app):
 app = FastAPI(title="Document Forensics Service", version="1.0.0", lifespan=lifespan)
 metrics = Metrics()
 # Layer 1 runs in a child process killed after this many seconds (0 disables), so a crafted file cannot hold a worker.
-LAYER1_TIMEOUT = float(os.getenv("LAYER1_TIMEOUT_SECONDS", "120")) or None
+def _layer1_timeout() -> float | None:
+    try:
+        return max(0.0, float(os.getenv("LAYER1_TIMEOUT_SECONDS", "120"))) or None
+    except ValueError:
+        return 120.0  # a malformed setting must not stop the service from starting
+
+
+LAYER1_TIMEOUT = _layer1_timeout()
 
 
 @app.middleware("http")

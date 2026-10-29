@@ -151,23 +151,25 @@ def _corroborate(findings: list[Finding]) -> None:
     for f in findings:
         if f.code not in _TYPOGRAPHY or f.severity >= Severity.HIGH:
             continue
-        matched = sorted(str(v) for v in flagged if v in {Decimal(a) for a in f.evidence.get("amounts", [])})
+        shown = {Decimal(a) for a in f.evidence.get("amounts", [])}
+        matched = sorted(str(v) for v in flagged if v in shown)
         if matched:
             f.severity = Severity.HIGH
             f.detail += f" Layer 2's arithmetic check independently flagged the same amount ({', '.join(matched)})."
             f.evidence["corroborated_by"] = "layer2"
 
 
-def _layer1(data: bytes, name: str, doc_type: str | None, ctx: Context | None, timeout: float | None) -> Report:
+def _layer1(data: bytes, name: str, doc_type: str | None, ctx: Context | None, timeout: float | None) -> tuple[Report, bool]:
+    """The layer 1 report, and whether it finished (False: it was killed or crashed)."""
     if not timeout:
-        return analyze_bytes(data, name, doc_type, ctx)
+        return analyze_bytes(data, name, doc_type, ctx), True
     try:
-        return call_with_timeout(analyze_bytes, (data, name, doc_type, ctx), timeout)
+        return call_with_timeout(analyze_bytes, (data, name, doc_type, ctx), timeout), True
     except Exception as exc:  # noqa: BLE001 - an unfinished layer 1 is inconclusive, never clean
         report = Report(path=name, file_type=detect_type(data), sha256=hashlib.sha256(data).hexdigest(), size=len(data))
         report.parsed = False
         report.errors.append(f"layer1: {type(exc).__name__}: {exc}")
-        return report
+        return report, False
 
 
 def analyze_document(data: bytes, name: str = "<upload>", doc_type: str | None = None, ctx: Context | None = None,
@@ -183,9 +185,17 @@ def analyze_document(data: bytes, name: str = "<upload>", doc_type: str | None =
     cannot run is listed in ``report.incomplete``, so it can never make a document look clean.
     """
     started = time.perf_counter()
-    report = _layer1(data, name, doc_type, ctx, layer1_timeout)
+    report, layer1_done = _layer1(data, name, doc_type, ctx, layer1_timeout)
     analysis = Analysis(report)
     durations = {"layer1": time.perf_counter() - started}
+    if not layer1_done:
+        # The file already defeated the isolated layer 1. Layers 2 and 3 parse and render it in this process, where
+        # nothing can interrupt them, so they are not attempted.
+        for requested, layer in ((layer2, "layer2"), (layer3, "layer3")):
+            if requested:
+                setattr(report, f"{layer}_status", "failed")
+                report.incomplete.append(layer)
+        layer2 = layer3 = False
     if layer2:
         layer_started = time.perf_counter()
         now = ctx.now if ctx is not None else None

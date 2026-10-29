@@ -148,6 +148,9 @@ async def _proxy_to_tenant(request: Request, url: str, timeout: float = 120.0) -
     async with httpx.AsyncClient(follow_redirects=True) as client:
         headers = dict(request.headers)
         headers.pop("host", None)
+        # httpx sets the length of the body it sends; forwarding the browser's own framing headers can contradict it.
+        for framing in ("content-length", "transfer-encoding", "connection", "expect"):
+            headers.pop(framing, None)
         body = await request.body()
         try:
             resp = await client.request(
