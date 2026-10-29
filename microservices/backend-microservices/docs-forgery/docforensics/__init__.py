@@ -10,10 +10,12 @@ from __future__ import annotations
 import hashlib
 import time
 from dataclasses import dataclass, field
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from .gemini_client import GeminiClient
 from .image_checks import check_image
+from .isolation import call_with_timeout
 from .layer2 import Layer2Result
 from .layer2 import Options as Layer2Options
 from .layer2 import run_layer2
@@ -127,21 +129,73 @@ class Analysis:
     performance: dict = field(default_factory=dict)
 
 
+_TYPOGRAPHY = {"NUMBER_FONT_MISMATCH", "NUMBER_SIZE_MISMATCH", "NUMBER_BASELINE_SHIFT"}
+
+
+def _corroborate(findings: list[Finding]) -> None:
+    """Raise a typography finding to HIGH when Layer 2's arithmetic independently flagged the same figure.
+
+    Each signal alone has innocent explanations (a design choice, a misread); two unrelated methods pointing at
+    one amount do not.
+    """
+    flagged: set[Decimal] = set()
+    for f in findings:
+        if f.evidence.get("source") == "layer2" and f.severity >= Severity.MEDIUM:
+            for value in (f.evidence.get("involved") or {}).values():
+                try:
+                    flagged.add(abs(Decimal(str(value))))
+                except InvalidOperation:
+                    continue
+    if not flagged:
+        return
+    for f in findings:
+        if f.code not in _TYPOGRAPHY or f.severity >= Severity.HIGH:
+            continue
+        shown = {Decimal(a) for a in f.evidence.get("amounts", [])}
+        matched = sorted(str(v) for v in flagged if v in shown)
+        if matched:
+            f.severity = Severity.HIGH
+            f.detail += f" Layer 2's arithmetic check independently flagged the same amount ({', '.join(matched)})."
+            f.evidence["corroborated_by"] = "layer2"
+
+
+def _layer1(data: bytes, name: str, doc_type: str | None, ctx: Context | None, timeout: float | None) -> tuple[Report, bool]:
+    """The layer 1 report, and whether it finished (False: it was killed or crashed)."""
+    if not timeout:
+        return analyze_bytes(data, name, doc_type, ctx), True
+    try:
+        return call_with_timeout(analyze_bytes, (data, name, doc_type, ctx), timeout), True
+    except Exception as exc:  # noqa: BLE001 - an unfinished layer 1 is inconclusive, never clean
+        report = Report(path=name, file_type=detect_type(data), sha256=hashlib.sha256(data).hexdigest(), size=len(data))
+        report.parsed = False
+        report.errors.append(f"layer1: {type(exc).__name__}: {exc}")
+        return report, False
+
+
 def analyze_document(data: bytes, name: str = "<upload>", doc_type: str | None = None, ctx: Context | None = None,
                      layer2: bool = False, client: GeminiClient | None = None,
                      options: Layer2Options | None = None,
                      layer3: bool = False, layer3_options: Layer3Options | None = None,
-                     layer3_runner=None) -> Analysis:
+                     layer3_runner=None, layer1_timeout: float | None = None) -> Analysis:
     """Analyse in-memory bytes (nothing is written to disk).
 
-    Layer 1 always runs. Layer 2 is opt-in: it sends the pages to the model provider. Layer 3 is opt-in and local
+    Layer 1 always runs; with ``layer1_timeout`` it runs in a child process that is killed at the deadline, and the
+    report is then inconclusive. Layer 2 is opt-in: it sends the pages to the model provider. Layer 3 is opt-in and local
     (an experimental pixel model in a separate PyTorch environment); nothing leaves the machine. A requested layer that
     cannot run is listed in ``report.incomplete``, so it can never make a document look clean.
     """
     started = time.perf_counter()
-    report = analyze_bytes(data, name, doc_type, ctx)
+    report, layer1_done = _layer1(data, name, doc_type, ctx, layer1_timeout)
     analysis = Analysis(report)
     durations = {"layer1": time.perf_counter() - started}
+    if not layer1_done:
+        # The file already defeated the isolated layer 1. Layers 2 and 3 parse and render it in this process, where
+        # nothing can interrupt them, so they are not attempted.
+        for requested, layer in ((layer2, "layer2"), (layer3, "layer3")):
+            if requested:
+                setattr(report, f"{layer}_status", "failed")
+                report.incomplete.append(layer)
+        layer2 = layer3 = False
     if layer2:
         layer_started = time.perf_counter()
         now = ctx.now if ctx is not None else None
@@ -175,6 +229,7 @@ def analyze_document(data: bytes, name: str = "<upload>", doc_type: str | None =
                 report.incomplete.append("layer3")
             analysis.layer3 = pixel
         durations["layer3"] = time.perf_counter() - layer_started
+    _corroborate(report.findings)
     calls = analysis.layer2.calls if analysis.layer2 else []
     analysis.performance = {
         "total_seconds": time.perf_counter() - started,

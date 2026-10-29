@@ -24,15 +24,35 @@ Read the numbers with these caveats:
 | Test | Files | Result |
 |---|---|---|
 | Genuine PDFs | 108 | **0 flagged** |
-| Genuine receipt images | 825 | **0 flagged** |
+| Genuine receipt images | 825 | **0 flagged** before the copy-move check; with it, 3 flagged `review` (1 of the 342 held out) |
 | White box + retyped number, incremental save | 106 | 106 caught |
 | White box + retyped number, file rewritten | 106 | 106 caught |
 | Original text properly redacted, number retyped, file rewritten | 106 | 1 caught: leaves no trace in the file |
 | Receipts edited in GIMP | 64 | 53 caught (83%): GIMP writes its name into the file |
-| Receipts edited in Paint, Paint 3D, Preview | 94 | 0 caught: they write nothing |
+| Receipts edited in Paint, Paint 3D, Preview | 94 | 0 caught from metadata (they write nothing); the copy-move check now catches most of them (below) |
+| All forged receipts, whole service (`analyze_bytes`) | 162 | **136 flagged** (96 review, 40 high risk), up from 53; copy-move fired on 121. Includes the `train` split used to choose the two copy-move settings |
 
 What this means: layer 1 is very quiet on genuine files, catches what leaves a trace, and cannot see a clean edit. That is
 the job of layer 2.
+
+### Copied regions in receipt images (pixels)
+
+The copy-move check (`docforensics/pixels.py`) was measured on all 987 "Find it again!" receipts. Its two settings (a
+region of at least 24 matching patches, at least twice the image's largest chance match) were chosen on the dataset's
+`train` split only, allowing at most 0.5% false alarms there; `val` and `test` were not looked at while choosing. "Caught"
+means a reported region overlaps a region the dataset's annotators marked as edited.
+
+| Split | Genuine flagged | Forged caught on the edit |
+|---|---|---|
+| train (settings chosen here) | 2 of 483 | 70 of 94 (74%) |
+| **val + test (held out)** | **1 of 342** (95% upper bound 1.6%) | **50 of 68 (74%**, 95% CI 61-83%) |
+
+Held out, by editor: Paint 23/31, GIMP 18/24, Preview 5/8, Paint 3D 3/3, KolourPaint 1/2. The three genuine receipts
+flagged show a dotted rule, faint speckle and one glyph repeated by the printer. Misses are mostly edits that are not
+copies (typed or drawn digits, erasures) and copies too small or too saturated to tell from chance.
+
+Limits of this measurement: one dataset, scanned receipts saved as PNG. A paste saved as JPEG is not caught at all (0 of
+10 in a spot check), and rendered images and screenshots are not judged.
 
 ### Two false-alarm bugs found by testing on real files
 

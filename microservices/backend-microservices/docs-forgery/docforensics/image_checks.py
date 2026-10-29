@@ -1,8 +1,10 @@
-"""Metadata checks for image files (JPEG, PNG, WebP, TIFF, HEIC).
+"""Checks for image files (JPEG, PNG, WebP, TIFF, HEIC).
 
-Nothing here inspects pixel noise, so JPEG compression, scaling and phone
-processing cannot trigger these checks. The one pixel comparison, against the
-EXIF thumbnail, uses coarse correlation that compression does not move.
+Apart from two pixel checks, everything here reads metadata. The comparison
+against the EXIF thumbnail uses coarse correlation that compression does not
+move. The copy-move check (pixels.py) runs only on lossless pixels and looks
+for exact repeats, which JPEG compression, scaling and phone processing do not
+produce.
 """
 
 from __future__ import annotations
@@ -16,6 +18,7 @@ from PIL import Image
 
 from . import xmp
 from .knowledge import IMAGE_TOOL_SEVERITY, TOOL_KIND_DESCRIPTION, Severity, ToolKind, identify_tools
+from .pixels import check_copy_move, is_lossless
 from .provenance import check_c2pa, check_source_types, check_text_fields
 from .report import Category, Finding
 
@@ -358,6 +361,17 @@ def check_image(data: bytes, where: str = "image", fmt_hint: str | None = None) 
                     "cropped or resized by a tool that kept the old thumbnail.",
                     result,
                 ))
+
+    # Pixels: regions pasted inside the image (lossless formats only; see pixels.py)
+    if img is not None and is_lossless(img, data):
+        props["pixels_checked"] = "copy-move"
+        try:
+            img.seek(0)
+            pixel_findings, pixel_errors = check_copy_move(img, where)
+            findings += pixel_findings
+            errors += pixel_errors
+        except Exception as exc:
+            errors.append(f"copy-move ({where}): {exc}")
 
     findings.append(Finding(
         "IMAGE_PROPERTIES", Severity.INFO, Category.CONTEXT, f"Image properties ({where})",

@@ -105,12 +105,16 @@ def _variants(token: str) -> set[Decimal]:
 
 
 def read_text_layer(data: bytes, max_pages: int = 8) -> TextLayer:
-    """Numbers and text a PDF itself contains. Empty for scans (no text layer)."""
-    from pdfminer.high_level import extract_text
+    """Numbers and text a PDF visibly shows. Empty for scans (no text layer).
+
+    Only visible text counts: an original value left hidden under a box, clipped away or overprinted by an edit
+    is still in the file, and must not "confirm" a figure. If visibility cannot be worked out, nothing is confirmed.
+    """
+    from ..pdf.layout import visible_text
 
     layer = TextLayer()
     try:
-        text = extract_text(io.BytesIO(data), page_numbers=list(range(max_pages)), maxpages=max_pages)
+        text = visible_text(data, max_pages)
     except Exception:
         return layer
     layer.strings = re.sub(r"\s+", "", text).lower()

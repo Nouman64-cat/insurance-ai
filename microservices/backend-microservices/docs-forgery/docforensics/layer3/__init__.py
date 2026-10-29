@@ -156,6 +156,17 @@ def render_pngs(data: bytes, file_type: str, max_pages: int) -> list[bytes]:
     return out
 
 
+def _parse_lines(stdout: bytes | None) -> list[dict[str, Any]]:
+    out = []
+    for line in (stdout or b"").decode("utf-8", "replace").splitlines():
+        if line.startswith("{"):
+            try:
+                out.append(json.loads(line))
+            except ValueError:
+                continue  # a line cut off when the worker was killed
+    return out
+
+
 def _subprocess_runner(pages: list[bytes], options: Layer3Options) -> list[dict[str, Any]]:
     python = pixel_python()
     payload = b"".join(struct.pack(">I", len(p)) + p for p in pages) + struct.pack(">I", 0)
@@ -164,8 +175,12 @@ def _subprocess_runner(pages: list[bytes], options: Layer3Options) -> list[dict[
             proc = subprocess.run([str(python), str(WORKER), str(models_dir()), str(options.max_side)], input=payload,
                                   capture_output=True, timeout=options.timeout_s, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     except subprocess.TimeoutExpired as exc:
-        raise TimeoutError(f"pixel model did not finish within {options.timeout_s:.0f}s") from exc
-    lines = [json.loads(line) for line in proc.stdout.decode("utf-8", "replace").splitlines() if line.startswith("{")]
+        # Pages scored before the deadline are still valid; keep them and mark the next page as not finished.
+        done = [ln for ln in _parse_lines(exc.stdout) if "ready" not in ln and "fatal" not in ln]
+        if not done:
+            raise TimeoutError(f"pixel model did not finish within {options.timeout_s:.0f}s") from exc
+        return done + [{"error": f"not scored: the pixel model ran out of time ({options.timeout_s:.0f}s)"}]
+    lines = _parse_lines(proc.stdout)
     if not lines:
         tail = proc.stderr.decode("utf-8", "replace").strip().splitlines()[-1:] or ["no output"]
         raise RuntimeError(f"pixel worker produced no output (exit {proc.returncode}): {tail[0][:200]}")

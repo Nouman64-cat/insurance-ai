@@ -12,6 +12,11 @@ For each source PDF, one number on page 1 is changed by three techniques:
 
 Metadata is left untouched in every case, so producer-based checks get no help.
 Requires PyMuPDF (AGPL), used only to generate test data.
+
+manifest.json records, per forgery, ``path`` (relative to the output folder, forward slashes), ``page`` (0-based),
+``rect`` (the edited box as [x0, y0, x1, y1] in PDF points, origin at the page's top-left corner, y pointing down)
+and ``page_size`` ([width, height] in points). That convention is only unambiguous on an unrotated page whose
+CropBox equals its MediaBox, so sources with a rotated or cropped first page are skipped.
 """
 
 from __future__ import annotations
@@ -63,6 +68,8 @@ def forge(src: Path, out_dir: Path) -> list[dict]:
             if doc.needs_pass or doc.page_count == 0:
                 break
             page = doc[0]
+            if page.rotation or page.cropbox != page.mediabox:
+                break  # the recorded box would need a coordinate transform nobody has tested
             rect, old = _target(page)
             if rect is None:
                 break
@@ -74,16 +81,20 @@ def forge(src: Path, out_dir: Path) -> list[dict]:
             else:
                 page.draw_rect(rect, color=None, fill=(1, 1, 1), overlay=True)
             page.insert_text((rect.x0, rect.y1 - size * 0.22), new, fontsize=size, fontname="helv", color=(0, 0, 0))
+            # Ground truth for localisation: page index and the edited box in PDF points, origin top-left, y down.
+            page_no, box, page_size = 0, [rect.x0, rect.y0, rect.x1, rect.y1], [page.rect.width, page.rect.height]
             if incremental:
                 doc.save(dest, incremental=True, encryption=pymupdf.PDF_ENCRYPT_KEEP)
             else:
                 doc.save(dest, garbage=3, deflate=True)
         finally:
             doc.close()
-        made.append({"path": str(dest), "technique": technique, "source": str(src), "old": old, "new": new})
+        made.append({"path": dest.relative_to(out_dir).as_posix(), "technique": technique, "source": str(src),
+                     "old": old, "new": new,
+                     "page": page_no, "rect": box, "page_size": page_size})
     if len(made) < 3:
         for m in made:
-            Path(m["path"]).unlink(missing_ok=True)
+            (out_dir / m["path"]).unlink(missing_ok=True)
         stray = out_dir / "overlay_incremental" / f"{src.parent.name}_{src.stem}.pdf"
         stray.unlink(missing_ok=True)
         return []
@@ -93,12 +104,18 @@ def forge(src: Path, out_dir: Path) -> list[dict]:
 def main() -> int:
     src_root, out_dir = Path(sys.argv[1]), Path(sys.argv[2])
     manifest = []
+    seen: dict[str, Path] = {}
     for src in sorted(src_root.rglob("*.pdf")):
+        name = f"{src.parent.name}_{src.stem}"  # the output file name; two sources must not share it
+        if name in seen:
+            print(f"  skip {src}: output name {name} already used by {seen[name]}", file=sys.stderr)
+            continue
+        seen[name] = src
         try:
             manifest += forge(src, out_dir)
         except Exception as exc:
             print(f"  skip {src.name}: {exc}", file=sys.stderr)
-    (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=1))
+    (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=1), encoding="utf-8")
     print(f"{len(manifest)} forged PDFs in {out_dir}")
     return 0
 
